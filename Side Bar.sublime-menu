@@ -1,0 +1,6 @@
+[
+  {"caption": "-", "id":"side-bar-start-separator"},
+  {"caption": "Build Index", "command": "side_bar_build_index"},
+  {"caption": "Clean Index", "command": "side_bar_clean_index"},
+  {"caption": "-", "id": "side-bar-end-separator"}
+]

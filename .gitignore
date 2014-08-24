@@ -1,0 +1,5 @@
+*.pyo
+*.pyc
+modules/clang
+modules/sqlite3/test
+lib/

@@ -1,0 +1,5 @@
+[
+    {"caption": "Open Definition", "command": "open_definition"},
+    {"caption": "List References", "command": "list_references"},
+    // {"caption": "Show Inheritance Diagram", "command": "show_inheritance_diagram"}
+]
