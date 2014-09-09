@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 
 import sublime
 import sublime_plugin
@@ -27,6 +28,24 @@ severity_key = {
     4 : 'Fatal'
 }
 
+def progress_callback(indexer_status, **kwargs):
+    if indexer_status == cindexer.Indexer.IndexerStatus.PARSING:
+        message = 'Parsing file ' + kwargs['path']
+    elif indexer_status == cindexer.Indexer.IndexerStatus.INDEXING:
+        message = 'Indexing file ' + kwargs['path']
+    elif indexer_status == cindexer.Indexer.IndexerStatus.COMPLETED:
+        message = 'Built index for ' + kwargs['project_path']
+
+    sublime.set_timeout(sublime.status_message(message), 0)
+
+def from_persistent_wrapper(project_path, progress_callback):
+    indexer = cindexer.Indexer.from_persistent(project_path, progress_callback)
+    indexers[project_path] = indexer
+
+def from_empty_wrapper(project_path, progress_callback):
+    indexer = cindexer.Indexer.from_empty(project_path, progress_callback)
+    indexers[project_path] = indexer
+
 def plugin_loaded():
     for window in sublime.windows():
         project_file = window.project_file_name()
@@ -34,8 +53,8 @@ def plugin_loaded():
         if project_file:
             project_path = os.path.dirname(window.project_file_name())
             if cindexer.Indexer.has_persistent_index(project_path):
-                indexer = cindexer.Indexer.from_persistent(project_path)
-                indexers[project_path] = indexer
+                indexer_thread = threading.Thread(target=from_persistent_wrapper, args=(project_path, progress_callback))
+                indexer_thread.start()
 
 class SublimeIndexerListener(sublime_plugin.EventListener):
 
@@ -181,16 +200,9 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
 
         project_path = os.path.dirname(project_file)
 
-        def progress_callback(indexer_status, **kwargs):
-            if indexer_status == cindexer.Indexer.IndexerStatus.PARSING:
-                sublime.status_message('Parsing file ' + kwargs['path'])
-            elif indexer_status == cindexer.Indexer.IndexerStatus.INDEXING:
-                sublime.status_message('Indexing file ' + kwargs['path'])
-            elif indexer_status == cindexer.Indexer.IndexerStatus.COMPLETED:
-                sublime.status_message('Built index for ' + project_path)
-
-        indexer = cindexer.Indexer.from_empty(project_path, progress_callback)
-        indexers[project_path] = indexer
+        indexer_thread = threading.Thread(target=from_empty_wrapper, args=(project_path, progress_callback))
+        indexer_thread.start()
+        
 
 class SideBarCleanIndexCommand(sublime_plugin.WindowCommand):
 

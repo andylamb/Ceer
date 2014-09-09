@@ -279,7 +279,7 @@ class Indexer(object):
         if os.path.exists(index_db_path):
             raise ExistingPersistentIndexError(index_db_path)
 
-        connection = sqlite3.connect(index_db_path)
+        connection = sqlite3.connect(index_db_path, check_same_thread = False)
         sql_cursor = connection.cursor()
         sql_cursor.execute(
             'CREATE TABLE defs(usr TEXT, path TEXT, offset INT)')
@@ -314,7 +314,8 @@ class Indexer(object):
         connection.commit()
         
         if progress_callback:
-            progress_callback(cls.IndexerStatus.COMPLETED)
+            progress_callback(cls.IndexerStatus.COMPLETED, 
+                              project_path=project_path)
 
         return cls(connection, index, translation_units, project_path)
 
@@ -345,7 +346,7 @@ class Indexer(object):
         if not os.path.exists(index_db_path):
             raise NoPersistentIndexError(index_db_path)
 
-        connection = sqlite3.connect(index_db_path)
+        connection = sqlite3.connect(index_db_path, check_same_thread = False)
 
         index = cindex.Index.create()
         translation_units = {}
@@ -362,7 +363,8 @@ class Indexer(object):
                             path = abs_path.decode('utf-8'))
                         
         if progress_callback:
-            progress_callback(cls.IndexerStatus.COMPLETED)
+            progress_callback(cls.IndexerStatus.COMPLETED, 
+                              project_path=project_path)
 
         return cls(connection, index, translation_units, project_path)
 
