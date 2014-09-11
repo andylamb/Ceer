@@ -14,9 +14,10 @@ ExistingPersistentIndexError
 NoPersistentIndexError
 '''
 from clang import cindex
-import sqlite3
-import os
 from fnmatch import fnmatch
+import os
+import sqlite3
+import threading
 
 
 class CIndexerError(Exception):
@@ -51,7 +52,7 @@ class NoPersistentIndexError(CIndexerError):
     def __init__(self, path):
         CIndexerError.__init__(self)
         self.path = path
-        
+
 
 class MalformedFolderDataError(CIndexerError):
     pass
@@ -234,8 +235,9 @@ class Indexer(object):
             path = os.path.join(self._project_path, path)
 
         return path in self._translation_units.keys()
-    
+
     class IndexerStatus(object):
+
         '''
         An enumeration describing the status of an Indexer instance while it 
         is parsing and building the index. This will be the first argument to 
@@ -279,7 +281,7 @@ class Indexer(object):
         ExistingPersistentIndexError -- raised if there is an existing index
         file
         '''
-        
+
         if not os.path.isabs(project_path):
             project_path = os.path.abspath(project_path)
 
@@ -287,7 +289,7 @@ class Indexer(object):
         if os.path.exists(index_db_path):
             raise ExistingPersistentIndexError(index_db_path)
 
-        connection = sqlite3.connect(index_db_path, check_same_thread = False)
+        connection = sqlite3.connect(index_db_path, check_same_thread=False)
         sql_cursor = connection.cursor()
         sql_cursor.execute(
             'CREATE TABLE defs(usr TEXT, path TEXT, offset INT)')
@@ -298,7 +300,7 @@ class Indexer(object):
             'CREATE UNIQUE INDEX path_offset_idx ON refs(path, offset)')
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path, 
+        translation_units = cls._parse_project(index, project_path,
                                                folders, progress_callback)
 
         for path, translation_unit in translation_units.items():
@@ -306,19 +308,19 @@ class Indexer(object):
                 path, translation_unit.cursor, connection, sql_cursor)
             if progress_callback:
                 progress_callback(
-                    cls.IndexerStatus.INDEXING, 
-                    path = path.decode('utf-8'))
+                    cls.IndexerStatus.INDEXING,
+                    path=path.decode('utf-8'))
 
         connection.commit()
-        
+
         if progress_callback:
-            progress_callback(cls.IndexerStatus.COMPLETED, 
+            progress_callback(cls.IndexerStatus.COMPLETED,
                               project_path=project_path)
 
         return cls(connection, index, translation_units, project_path)
 
     @classmethod
-    def from_persistent(cls, project_path, folders=None, 
+    def from_persistent(cls, project_path, folders=None,
                         progress_callback=None):
         '''
         Create an Indexer instance from an existing index.
@@ -340,7 +342,7 @@ class Indexer(object):
         Exceptions:
         NoPersistentIndexError -- raise if there is not an existing index file.
         '''
-        
+
         if not os.path.isabs(project_path):
             project_path = os.path.abspath(project_path)
 
@@ -348,14 +350,14 @@ class Indexer(object):
         if not os.path.exists(index_db_path):
             raise NoPersistentIndexError(index_db_path)
 
-        connection = sqlite3.connect(index_db_path, check_same_thread = False)
+        connection = sqlite3.connect(index_db_path, check_same_thread=False)
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path, 
+        translation_units = cls._parse_project(index, project_path,
                                                folders, progress_callback)
-                        
+
         if progress_callback:
-            progress_callback(cls.IndexerStatus.COMPLETED, 
+            progress_callback(cls.IndexerStatus.COMPLETED,
                               project_path=project_path)
 
         return cls(connection, index, translation_units, project_path)
@@ -424,7 +426,7 @@ class Indexer(object):
         translation_unit = self._translation_units[source_location.file.name]
         cursor = cindex.Cursor.from_location(translation_unit, source_location)
         cursor = cursor.referenced
-        
+
         if not cursor:
             return []
 
@@ -549,8 +551,19 @@ class Indexer(object):
         return any(file_name.endswith(ext) for ext in exts)
     
     @classmethod
+    def _parse_wrapper(cls, translation_units, index, 
+                       abs_path, progress_callback):
+        
+        translation_units[abs_path] = index.parse(abs_path)
+        if progress_callback:
+            progress_callback(
+                cls.IndexerStatus.PARSING,
+                path=abs_path.decode('utf-8'))
+
+    @classmethod
     def _parse_project(cls, index, project_path, folders, progress_callback):
         translation_units = {}
+        started_threads = []
         if folders and len(folders) > 0:
             try:
                 all_folder_paths = []
@@ -561,59 +574,65 @@ class Indexer(object):
                     all_folder_paths.append(folder_path)
             except KeyError:
                 raise MalformedFolderDataError
-            
+
             for folder in folders:
                 folder_path = folder['path']
                 if not os.path.isabs(folder_path):
                     folder_path = os.path.join(project_path, folder_path)
-    
+
                 file_exclude_patterns = folder.get('file_exclude_patterns')
                 if not file_exclude_patterns:
                     file_exclude_patterns = []
-                    
+
                 folder_exclude_patterns = folder.get('folder_exclude_patterns')
                 if not folder_exclude_patterns:
                     folder_exclude_patterns = []
-                    
+
                 for path, subdirs, files in os.walk(
-                    folder_path, 
-                    topdown=True, 
-                    followlinks=folder.get('follow_symlinks')):
-                    
+                        folder_path,
+                        topdown=True,
+                        followlinks=folder.get('follow_symlinks')):
+
                     for file in files:
-                        if (cls._indexable(file) and 
-                        not any([fnmatch(file, pattern) \
-                        for pattern in file_exclude_patterns])):
-                            
-                            abs_path = os.path.abspath(os.path.join(path, 
+                        if (cls._indexable(file) and
+                            not any([fnmatch(file, pattern)
+                                     for pattern in file_exclude_patterns])):
+
+                            abs_path = os.path.abspath(os.path.join(path,
                                                                     file))
                             abs_path = bytes(abs_path, 'utf-8')
-                            translation_units[abs_path] = index.parse(abs_path)
-                            if progress_callback:
-                                progress_callback(
-                                    cls.IndexerStatus.PARSING, 
-                                    path = abs_path.decode('utf-8'))
-                    
-                    for subdir in subdirs: 
-                        if (any([fnmatch(subdir, pattern) \
-                        for pattern in folder_exclude_patterns]) or 
-                        os.path.abspath(subdir) in all_folder_paths):
-                        
+                            indexer_thread = threading.Thread(
+                                target=cls._parse_wrapper, 
+                                args=(translation_units, index, 
+                                      abs_path, progress_callback))
+                            indexer_thread.start()
+                            started_threads.append(indexer_thread)
+
+
+                    for subdir in subdirs:
+                        if (any([fnmatch(subdir, pattern)
+                                 for pattern in folder_exclude_patterns]) or
+                                os.path.abspath(subdir) in all_folder_paths):
+
                             subdirs.remove(subdir)
 
         else:
             for path, subdirs, files in os.walk(folder_path):
                 for file in files:
                     if cls._indexable(file):
-                        
+
                         abs_path = os.path.abspath(os.path.join(path, file))
                         abs_path = bytes(abs_path, 'utf-8')
-                        translation_units[abs_path] = index.parse(abs_path)
-                        if progress_callback:
-                            progress_callback(
-                                cls.IndexerStatus.PARSING, 
-                                path = abs_path.decode('utf-8'))
-            
+                        indexer_thread = threading.Thread(
+                            target=cls._parse_wrapper, 
+                            args=(translation_units, index, 
+                                  abs_path, progress_callback))
+                        indexer_thread.start()
+                        started_threads.append(indexer_thread)
+
+        for thread in started_threads:
+            thread.join()
+
         return translation_units
 
     @staticmethod
