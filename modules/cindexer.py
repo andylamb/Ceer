@@ -53,10 +53,15 @@ class NoPersistentIndexError(CIndexerError):
         CIndexerError.__init__(self)
         self.path = path
 
-
-class MalformedFolderDataError(CIndexerError):
-    pass
-
+class InternalError(CIndexerError):
+    
+    def __init__(self, **kwargs):
+        CIndexerError.__init__(self)
+        self.kwargs = kwargs
+        
+    def __str__(self):
+        return self.kwargs.__str__()
+            
 
 class ClassProperty(property):
 
@@ -565,15 +570,12 @@ class Indexer(object):
         translation_units = {}
         started_threads = []
         if folders and len(folders) > 0:
-            try:
-                all_folder_paths = []
-                for folder in folders:
-                    folder_path = folder['path']
-                    if not os.path.isabs(folder_path):
-                        folder_path = os.path.join(project_path, folder_path)
-                    all_folder_paths.append(folder_path)
-            except KeyError:
-                raise MalformedFolderDataError
+            all_folder_paths = []
+            for folder in folders:
+                folder_path = folder['path']
+                if not os.path.isabs(folder_path):
+                    folder_path = os.path.join(project_path, folder_path)
+                all_folder_paths.append(folder_path)
 
             for folder in folders:
                 folder_path = folder['path']
@@ -662,29 +664,42 @@ class Indexer(object):
     @staticmethod
     def _update_db(path, cursor, connection,
                    sql_cursor, enclosing_def_cursor=None):
-        if cursor.is_definition():
-            sql_cursor.execute(
-                'INSERT INTO defs VALUES (?, ?, ?)',
-                (cursor.get_usr(), path, cursor.location.offset))
-            if Indexer._is_enclosing_def(cursor):
-                enclosing_def_cursor = cursor
-        elif (cursor.referenced and cursor != cursor.referenced
-              and cursor.location.file.name == path):
-            if enclosing_def_cursor:
-                enclosing_offset = enclosing_def_cursor.location.offset
-            else:
-                enclosing_offset = -1
-
-            sql_cursor.execute(
-                'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
-                (cursor.referenced.get_usr(),
-                 path,
-                 cursor.location.offset,
-                 enclosing_offset))
-
-        for child in cursor.get_children():
-            Indexer._update_db(
-                path, child, connection, sql_cursor, enclosing_def_cursor)
+        try:
+            if cursor.is_definition():
+                sql_cursor.execute(
+                    'INSERT INTO defs VALUES (?, ?, ?)',
+                    (cursor.get_usr(), path, cursor.location.offset))
+                if Indexer._is_enclosing_def(cursor):
+                    enclosing_def_cursor = cursor
+            elif (cursor.referenced and 
+                  cursor != cursor.referenced and 
+                  cursor.location.file and
+                  cursor.location.file.name == path):
+                
+                if enclosing_def_cursor:
+                    enclosing_offset = enclosing_def_cursor.location.offset
+                else:
+                    enclosing_offset = -1
+    
+                sql_cursor.execute(
+                    'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
+                    (cursor.referenced.get_usr(),
+                     path,
+                     cursor.location.offset,
+                     enclosing_offset))
+    
+            for child in cursor.get_children():
+                Indexer._update_db(
+                    path, child, connection, sql_cursor, enclosing_def_cursor)
+                
+        except InternalError:
+            raise
+        except Exception as e:
+            raise InternalError(path=path,
+                                cursor_spelling=cursor.spelling,
+                                cursor_location=cursor.location,
+                                cursor_kind=cursor.kind,
+                                exception=e)
 
     def _file_from_name(self, file_name):
         translation_unit = self._translation_units[file_name]
