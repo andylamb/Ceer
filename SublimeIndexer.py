@@ -38,12 +38,12 @@ def progress_callback(indexer_status, **kwargs):
 
     sublime.set_timeout(sublime.status_message(message), 0)
 
-def from_persistent_wrapper(project_path, progress_callback):
-    indexer = cindexer.Indexer.from_persistent(project_path, progress_callback)
+def from_persistent_wrapper(project_path, folders, progress_callback):
+    indexer = cindexer.Indexer.from_persistent(project_path, folders, progress_callback)
     indexers[project_path] = indexer
 
-def from_empty_wrapper(project_path, progress_callback):
-    indexer = cindexer.Indexer.from_empty(project_path, progress_callback)
+def from_empty_wrapper(project_path, folders, progress_callback):
+    indexer = cindexer.Indexer.from_empty(project_path, folders, progress_callback)
     indexers[project_path] = indexer
 
 def plugin_loaded():
@@ -53,7 +53,9 @@ def plugin_loaded():
         if project_file:
             project_path = os.path.dirname(window.project_file_name())
             if cindexer.Indexer.has_persistent_index(project_path):
-                indexer_thread = threading.Thread(target=from_persistent_wrapper, args=(project_path, progress_callback))
+                project_data = window.project_data()
+                folders = project_data.get('folders')
+                indexer_thread = threading.Thread(target=from_persistent_wrapper, args=(project_path, folders, progress_callback))
                 indexer_thread.start()
 
 class SublimeIndexerListener(sublime_plugin.EventListener):
@@ -199,8 +201,9 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
             return
 
         project_path = os.path.dirname(project_file)
-
-        indexer_thread = threading.Thread(target=from_empty_wrapper, args=(project_path, progress_callback))
+        project_data = self.window.project_data()
+        folders = project_data.get('folders')
+        indexer_thread = threading.Thread(target=from_empty_wrapper, args=(project_path, folders, progress_callback))
         indexer_thread.start()
         
 
