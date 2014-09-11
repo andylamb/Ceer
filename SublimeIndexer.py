@@ -302,20 +302,25 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
         # Capture window so it can be used in the callback
         window = self.view.window()
 
+        initial_sel = self.view.sel()
+
         def on_done(index):
-            pass
+            if index == -1:
+                window.focus_view(self.view)
+                self.view.sel().clear()
+                for region in initial_sel:
+                    self.view.sel().add(region)
 
         def on_highlight(index):
-            if index is not -1:
-                ref_cursor = references[index][0]
-                ref_location_string = ':'.join([
-                    ref_cursor.location.file.name.decode('utf-8'),
-                    str(ref_cursor.location.line),
-                    str(ref_cursor.location.column)
-                    ])
-                ref_view = window.open_file(ref_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
-                ref_view.sel().clear()
-                ref_view.sel().add(ref_view.word(ref_cursor.location.offset))
+            ref_cursor = references[index][0]
+            ref_location_string = ':'.join([
+                ref_cursor.location.file.name.decode('utf-8'),
+                str(ref_cursor.location.line),
+                str(ref_cursor.location.column)
+                ])
+            ref_view = window.open_file(ref_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            ref_view.sel().clear()
+            ref_view.sel().add(ref_view.word(ref_cursor.location.offset))
 
         self.view.window().show_quick_panel(reference_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
 
