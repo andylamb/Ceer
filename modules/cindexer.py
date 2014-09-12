@@ -248,24 +248,27 @@ class Indexer(object):
         is parsing and building the index. This will be the first argument to 
         the callback function, if provided to from_empty or from_persistent.
         '''
-        PARSING = 1
+        STARTING_PARSE = 1
+        FINISHED_PARSE = 2
         '''
         The Indexer instance is parsing source code. There will be a 'path' 
         argument for the callback.
         '''
-        INDEXING = 2
+        STARTING_INDEXING = 3
+        FINISHED_INDEXING = 4
         '''
         The Indexer instance is traversing the ast and storing references and 
         declarations in the index file. There will be a 'path' argument for 
         the callback. 
         '''
-        COMPLETED = 3
+        COMPLETED = 5
         '''
         The Indexer instance is finished building the index.
         '''
 
     @classmethod
-    def from_empty(cls, project_path, folders=None, progress_callback=None):
+    def from_empty(cls, project_path, args=None, 
+                   folders=None, progress_callback=None):
         '''
         Create an Indexer instance from a project that has not been indexed.
 
@@ -309,11 +312,17 @@ class Indexer(object):
                                                folders, progress_callback)
 
         for path, translation_unit in translation_units.items():
-            cls._update_db(
-                path, translation_unit.cursor, connection, sql_cursor)
             if progress_callback:
                 progress_callback(
-                    cls.IndexerStatus.INDEXING,
+                    cls.IndexerStatus.STARTING_INDEXING,
+                    path=path.decode('utf-8'))
+                
+            cls._update_db(
+                path, translation_unit.cursor, connection, sql_cursor)
+            
+            if progress_callback:
+                progress_callback(
+                    cls.IndexerStatus.FINISHED_INDEXING,
                     path=path.decode('utf-8'))
 
         connection.commit()
@@ -325,8 +334,8 @@ class Indexer(object):
         return cls(connection, index, translation_units, project_path)
 
     @classmethod
-    def from_persistent(cls, project_path, folders=None,
-                        progress_callback=None):
+    def from_persistent(cls, project_path, args=None,
+                        folders=None, progress_callback=None):
         '''
         Create an Indexer instance from an existing index.
 
@@ -502,7 +511,7 @@ class Indexer(object):
             source_location.column,
             unsaved_files)
 
-    def add_file(self, path):
+    def add_file(self, path, progress_callback=None):
         '''
         Add a file to the index, and return a new File instance.
 
@@ -517,16 +526,34 @@ class Indexer(object):
         if not os.path.isabs(path):
             path = os.path.join(self._project_path, path)
 
+        if progress_callback:
+            progress_callback(self.IndexerStatus.STARTING_PARSE,
+                              path=path)
+            
         translation_unit = self._index.parse(path)
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.FINISHED_PARSE,
+                              path=path.decode('utf_8'))
+        
         self._translation_units[path] = translation_unit
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.STARTING_INDEXING,
+                              path=path.decode('utf_8'))
+        
         Indexer._update_db(
             path, translation_unit.cursor,
             self._connection, self._connection.cursor())
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.FINISHED_INDEXING,
+                              path=path.decode('utf_8'))
 
         self._connection.commit()
         return self._file_from_name(path)
 
-    def update_file(self, cindexer_file):
+    def update_file(self, cindexer_file, progress_callback=None):
         '''
         Update a file in the index, and return a new File instance.
 
@@ -542,12 +569,30 @@ class Indexer(object):
         translation_unit = self._translation_units.get(path)
         sql_cursor = self._connection.cursor()
 
+        if progress_callback:
+            progress_callback(self.IndexerStatus.STARTING_PARSE,
+                              path=path.decode('utf_8'))
+            
         translation_unit.reparse()
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.FINISHED_PARSE,
+                              path=path.decode('utf_8'))
+        
         sql_cursor.execute('DELETE FROM defs WHERE path = ?', (path,))
         sql_cursor.execute('DELETE FROM refs WHERE path = ?', (path,))
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.STARTING_INDEXING,
+                              path=path.decode('utf_8'))
+        
         Indexer._update_db(
             path, translation_unit.cursor,
             self._connection, self._connection.cursor())
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.FINISHED_INDEXING,
+                              path=path.decode('utf_8'))
 
         self._connection.commit()
         return self._file_from_name(path)
@@ -564,11 +609,15 @@ class Indexer(object):
     @classmethod
     def _parse_wrapper(cls, translation_units, index, 
                        abs_path, progress_callback):
-        
+        if progress_callback:
+            progress_callback(cls.IndexerStatus.STARTING_PARSE,
+                              path=abs_path.decode('utf-8'))
+            
         translation_units[abs_path] = index.parse(abs_path)
+        
         if progress_callback:
             progress_callback(
-                cls.IndexerStatus.PARSING,
+                cls.IndexerStatus.FINISHED_PARSE,
                 path=abs_path.decode('utf-8'))
 
     @classmethod

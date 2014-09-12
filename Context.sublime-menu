@@ -1,4 +1,5 @@
 [
+    {"caption": "-", "id": "context-start-separator"},
     {"caption": "Open Definition", "command": "open_definition"},
     {"caption": "List References", "command": "list_references"},
     {"caption": "View Issues In File", "command": "view_issues"}

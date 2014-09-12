@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 
 import sublime
 import sublime_plugin
@@ -28,17 +29,21 @@ severity_key = {
 }
 
 def _progress_callback(indexer_status, **kwargs):
-    if indexer_status == cindexer.Indexer.IndexerStatus.PARSING:
+    if indexer_status == cindexer.Indexer.IndexerStatus.STARTING_PARSE:
         message = 'Parsing file ' + kwargs['path']
-    elif indexer_status == cindexer.Indexer.IndexerStatus.INDEXING:
+    elif indexer_status == cindexer.Indexer.IndexerStatus.FINISHED_PARSE:
+        message = 'Finished parsing file ' + kwargs['path']
+    elif indexer_status == cindexer.Indexer.IndexerStatus.STARTING_INDEXING:
         message = 'Indexing file ' + kwargs['path']
+    elif indexer_status == cindexer.Indexer.IndexerStatus.FINISHED_INDEXING:
+        message = 'Finished indexing file ' + kwargs['path']
     elif indexer_status == cindexer.Indexer.IndexerStatus.COMPLETED:
         message = 'Built index for ' + kwargs['project_path']
 
     sublime.set_timeout(sublime.status_message(message), 0)
 
 def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
-    indexer = cindexer.Indexer.from_persistent(project_path, folders, _progress_callback)
+    indexer = cindexer.Indexer.from_persistent(project_path, folders=folders, progress_callback=_progress_callback)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
 
@@ -47,7 +52,7 @@ def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
         sublime.error_message('There are ' + str(num_diagnostics) + ' issues in the project, and indexing may be incomplete or inaccurate.')
 
 def _from_empty_wrapper(project_path, folders, _progress_callback, window):
-    indexer = cindexer.Indexer.from_empty(project_path, folders, _progress_callback)
+    indexer = cindexer.Indexer.from_empty(project_path, folders=folders, progress_callback=_progress_callback)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
 
@@ -88,20 +93,21 @@ def _update_view_diagnostics(view, indexer):
         current_diagnostics[view.file_name()] = view_diagnostics
 
 def _get_diagnostic_summary(diagnostic):
-    result  = ':'.join([
-        diagnostic.location.file.name.decode('utf-8'),
-        str(diagnostic.location.line),
-        str(diagnostic.location.column),
-        ' ' + severity_key[diagnostic.severity],
-        ' ' + diagnostic.spelling.decode('utf-8')
-        ])
+    if diagnostic.location.file:
+      result = ':'.join([
+          diagnostic.location.file.name.decode('utf-8'),
+          str(diagnostic.location.line),
+          str(diagnostic.location.column),
+          ' ' + severity_key[diagnostic.severity],
+          ' ' + diagnostic.spelling.decode('utf-8')
+          ])
+    else:
+      result = severity_key[diagnostic.severity] + ': ' + diagnostic.spelling.decode('utf-8')
 
     if diagnostic.option:
         result += ' [' + diagnostic.option.decode('utf-8') + ']'
 
     return result
-
-
 
 def plugin_loaded():
     for window in sublime.windows():
@@ -115,6 +121,7 @@ def plugin_loaded():
                 indexer_thread = threading.Thread(target=_from_persistent_wrapper, args=(project_path, folders, _progress_callback, window))
                 indexer_thread.start()
 
+
 class SublimeIndexerListener(sublime_plugin.EventListener):
 
     def on_post_save(self, view):
@@ -127,9 +134,9 @@ class SublimeIndexerListener(sublime_plugin.EventListener):
                 name = view.file_name()
                 if indexer.indexed(name):
                     cindexer_file = cindexer.File.from_name(indexer, view.file_name())
-                    cindexer_file = indexer.update_file(cindexer_file)
+                    cindexer_file = indexer.update_file(cindexer_file, _progress_callback)
                 else:
-                    cindexer_file = indexer.add_file(name)
+                    cindexer_file = indexer.add_file(name, _progress_callback)
 
                 _update_view_diagnostics(view, indexer.get_diagnostics(cindexer_file))
 
@@ -332,7 +339,7 @@ class OpenDefinitionCommand(sublime_plugin.TextCommand):
             if indexer:
                 return indexer.indexed(self.view.file_name())
 
-        return false
+        return False
 
     def run(self, edit):
         if len(self.view.sel()) != 1:
@@ -369,7 +376,7 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
             if indexer:
                 return indexer.indexed(self.view.file_name())
 
-        return false
+        return False
 
     def run(self, edit):
         if len(self.view.sel()) != 1:
@@ -435,7 +442,7 @@ class ViewIssuesCommand(sublime_plugin.TextCommand):
             if indexer:
                 return indexer.indexed(self.view.file_name())
 
-        return false
+        return False
 
     def run(self, edit):
         project_path = os.path.dirname(self.view.window().project_file_name())
