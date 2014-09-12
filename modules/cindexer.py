@@ -460,16 +460,22 @@ class Indexer(object):
 
         return result
 
-    def get_diagnostics(self, cindexer_file):
+    def get_diagnostics(self, cindexer_file=None):
         '''
         Return an iteratable and _indexable object containing the diagnostics.
 
         Parameters:
         cindexer_file -- A File instance, created by a call to from_name.
         '''
-        translation_unit = self._translation_units[cindexer_file.name]
-        return translation_unit.diagnostics
-
+        if cindexer_file:
+            translation_unit = self._translation_units[cindexer_file.name]
+            return translation_unit.diagnostics
+        else:
+            result = []
+            for translation_unit in self._translation_units.values():
+                result.extend(translation_unit.diagnostics)
+            return result
+                
     def get_code_completion(self, source_location, unsaved_files=None):
         '''
         Return a CodeCompleteResults object, or None.

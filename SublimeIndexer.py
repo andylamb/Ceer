@@ -19,7 +19,6 @@ if not cindexer.Config.loaded:
 
 indexers = {}
 current_diagnostics = {}
-current_completions = {}
 severity_key = {
     0 : 'Ignored',
     1 : 'Note',
@@ -28,7 +27,7 @@ severity_key = {
     4 : 'Fatal'
 }
 
-def progress_callback(indexer_status, **kwargs):
+def _progress_callback(indexer_status, **kwargs):
     if indexer_status == cindexer.Indexer.IndexerStatus.PARSING:
         message = 'Parsing file ' + kwargs['path']
     elif indexer_status == cindexer.Indexer.IndexerStatus.INDEXING:
@@ -38,13 +37,71 @@ def progress_callback(indexer_status, **kwargs):
 
     sublime.set_timeout(sublime.status_message(message), 0)
 
-def from_persistent_wrapper(project_path, folders, progress_callback):
-    indexer = cindexer.Indexer.from_persistent(project_path, folders, progress_callback)
+def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
+    indexer = cindexer.Indexer.from_persistent(project_path, folders, _progress_callback)
     indexers[project_path] = indexer
+    _update_window_diagnostics(window, indexer)
 
-def from_empty_wrapper(project_path, folders, progress_callback):
-    indexer = cindexer.Indexer.from_empty(project_path, folders, progress_callback)
+    num_diagnostics = len(indexer.get_diagnostics())
+    if num_diagnostics > 0:
+        sublime.error_message('There are ' + str(num_diagnostics) + ' issues in the project, and indexing may be incomplete or inaccurate.')
+
+def _from_empty_wrapper(project_path, folders, _progress_callback, window):
+    indexer = cindexer.Indexer.from_empty(project_path, folders, _progress_callback)
     indexers[project_path] = indexer
+    _update_window_diagnostics(window, indexer)
+
+    num_diagnostics = len(indexer.get_diagnostics())
+    if num_diagnostics > 0:
+        sublime.error_message('There are ' + str(num_diagnostics) + ' issues in the project, and indexing may be incomplete or inaccurate.')
+
+def _update_window_diagnostics(window, indexer):
+    for view in window.views():
+        file_name = view.file_name()
+
+        if file_name:
+            _update_view_diagnostics(view, indexer)
+
+def _update_view_diagnostics(view, indexer):
+    if indexer.indexed(view.file_name()):
+        cindexer_file = cindexer.File.from_name(indexer, view.file_name())
+        diagnostics = indexer.get_diagnostics(cindexer_file)
+        view_diagnostics = []
+        all_regions = []
+
+        for diagnostic in diagnostics:
+            regions = []
+            for diagnostic_range in diagnostic.ranges:
+                regions.append(sublime.Region(diagnostic_range.start.offset, diagnostic_range.end.offset))
+
+            if diagnostic.location.offset == view.size():
+                regions.append(sublime.Region(diagnostic.location.offset - 1, diagnostic.location.offset))
+            else:
+                regions.append(sublime.Region(diagnostic.location.offset, diagnostic.location.offset + 1))
+
+            all_regions.extend(regions)
+            view_diagnostics.append((regions, diagnostic))
+
+        view.erase_regions('diagnostics')
+        view.add_regions('diagnostics', all_regions, 'invalid', flags=sublime.PERSISTENT | sublime.DRAW_SQUIGGLY_UNDERLINE | sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE)
+
+        current_diagnostics[view.file_name()] = view_diagnostics
+
+def _get_diagnostic_summary(diagnostic):
+    result  = ':'.join([
+        diagnostic.location.file.name.decode('utf-8'),
+        str(diagnostic.location.line),
+        str(diagnostic.location.column),
+        ' ' + severity_key[diagnostic.severity],
+        ' ' + diagnostic.spelling.decode('utf-8')
+        ])
+
+    if diagnostic.option:
+        result += ' [' + diagnostic.option.decode('utf-8') + ']'
+
+    return result
+
+
 
 def plugin_loaded():
     for window in sublime.windows():
@@ -55,7 +112,7 @@ def plugin_loaded():
             if cindexer.Indexer.has_persistent_index(project_path):
                 project_data = window.project_data()
                 folders = project_data.get('folders')
-                indexer_thread = threading.Thread(target=from_persistent_wrapper, args=(project_path, folders, progress_callback))
+                indexer_thread = threading.Thread(target=_from_persistent_wrapper, args=(project_path, folders, _progress_callback, window))
                 indexer_thread.start()
 
 class SublimeIndexerListener(sublime_plugin.EventListener):
@@ -74,48 +131,37 @@ class SublimeIndexerListener(sublime_plugin.EventListener):
                 else:
                     cindexer_file = indexer.add_file(name)
 
-    #             view_diagnostics = []
-    #             for diagnostic in indexer.get_diagnostics(cindexer_file):
-    #                 regions = []
-    #                 for diagnostic_range in diagnostic.ranges:
-    #                     regions.append(sublime.Region(diagnostic_range.start.offset, diagnostic_range.end.offset))
+                _update_view_diagnostics(view, indexer.get_diagnostics(cindexer_file))
 
-    #                 if diagnostic.location.offset == view.size():
-    #                     regions.append(sublime.Region(diagnostic.location.offset - 1, diagnostic.location.offset))
-    #                 else:
-    #                     regions.append(sublime.Region(diagnostic.location.offset, diagnostic.location.offset + 1))
+    def on_load(self, view):
+        window = view.window()
+        if window:
+            project_file = view.window().project_file_name()
 
-    #                 view_diagnostics.append((regions, diagnostic))
+            if project_file:
+                project_path = os.path.dirname(project_file)
+                indexer = indexers.get(project_path)
+                if indexer:
+                    name = view.file_name()
+                    if indexer.indexed(name):
+                        cindexer_file = cindexer.File.from_name(indexer, name)
+                        _update_view_diagnostics(view, indexer)
 
-    #             current_diagnostics[view.file_name()] = view_diagnostics
+    def on_selection_modified(self, view):
+        if len(view.sel()) == 1:
+            offset = view.sel()[0].b
+            view_diagnostics = current_diagnostics.get(view.file_name())
+            if view_diagnostics:
+                for regions, diagnostic in view_diagnostics:
+                    contains = False
+                    for region in regions:
+                        if region.contains(offset):
+                            contains = True
+                            break
 
-    #             all_regions = []
-    #             for regions, unused in view_diagnostics:
-    #                 all_regions.extend(regions)
-
-    #             view.erase_regions('diagnostics')
-    #             view.add_regions('diagnostics', all_regions, 'invalid', flags=sublime.PERSISTENT | sublime.DRAW_SQUIGGLY_UNDERLINE | sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE)
-
-    # def on_selection_modified(self, view):
-    #     if len(view.sel()) == 1:
-    #         offset = view.sel()[0].b
-    #         view_diagnostics = current_diagnostics.get(view.file_name())
-    #         if view_diagnostics:
-    #             for regions, diagnostic in view_diagnostics:
-    #                 contains = False
-    #                 for region in regions:
-    #                     if region.contains(offset):
-    #                         contains = True
-    #                         break
-
-    #                 if contains:
-    #                     summary = severity_key[diagnostic.severity] + ': ' + diagnostic.spelling.decode('utf-8')
-
-    #                     if diagnostic.option:
-    #                         summary += ' [' + diagnostic.option.decode('utf-8') + ']'
-
-    #                     sublime.status_message(summary)
-    #                     break
+                    if contains:
+                        sublime.status_message(_get_diagnostic_summary(diagnostic))
+                        break
 
     # def on_modified(self, view):
     #     project_file = view.window().project_file_name()
@@ -203,7 +249,7 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
         project_path = os.path.dirname(project_file)
         project_data = self.window.project_data()
         folders = project_data.get('folders')
-        indexer_thread = threading.Thread(target=from_empty_wrapper, args=(project_path, folders, progress_callback))
+        indexer_thread = threading.Thread(target=_from_empty_wrapper, args=(project_path, folders, _progress_callback, self.window))
         indexer_thread.start()
         
 
@@ -225,6 +271,56 @@ class SideBarCleanIndexCommand(sublime_plugin.WindowCommand):
         indexers.pop(project_path)
 
 
+class SideBarViewIssuesCommand(sublime_plugin.WindowCommand):
+
+    def is_enabled(self):
+        project_file = self.window.project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            return cindexer.Indexer.has_persistent_index(project_path)
+
+        return False
+
+    def run(self):
+        project_path = os.path.dirname(self.window.project_file_name())
+        indexer = indexers[project_path]
+        diagnostics = indexer.get_diagnostics()
+
+        if len(diagnostics) == 0:
+            sublime.status_message('No issues in the project.')
+            return
+
+        diagnostic_strings = [
+            _get_diagnostic_summary(diagnostic) for diagnostic in diagnostics
+        ]
+
+        window = self.window
+        initial_view = window.active_view()
+        initial_sel = initial_view.sel()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(initial_view)
+                initial_view.sel().clear()
+                for region in initial_sel:
+                    initial_view.sel().add(region)
+
+        def on_highlight(index):
+            diagnostic = diagnostics[index]
+            diagnostic_location_string = ':'.join([
+                diagnostic.location.file.name.decode('utf-8'),
+                str(diagnostic.location.line),
+                str(diagnostic.location.column)
+                ])
+            diagnostic_view = window.open_file(diagnostic_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            _update_view_diagnostics(diagnostic_view, indexer)
+            diagnostic_view.sel().clear()
+            diagnostic_view.sel().add(diagnostic_view.word(diagnostic.location.offset))
+
+        self.window.show_quick_panel(diagnostic_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)        
+
+
 class OpenDefinitionCommand(sublime_plugin.TextCommand):
 
     def is_enabled(self):
@@ -232,7 +328,9 @@ class OpenDefinitionCommand(sublime_plugin.TextCommand):
 
         if project_file:
             project_path = os.path.dirname(project_file)
-            return project_path in indexers.keys()
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
 
         return false
 
@@ -267,7 +365,9 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
 
         if project_file:
             project_path = os.path.dirname(project_file)
-            return project_path in indexers.keys()
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
 
         return false
 
@@ -301,7 +401,6 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
 
         # Capture window so it can be used in the callback
         window = self.view.window()
-
         initial_sel = self.view.sel()
 
         def on_done(index):
@@ -323,4 +422,58 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
             ref_view.sel().add(ref_view.word(ref_cursor.location.offset))
 
         self.view.window().show_quick_panel(reference_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
+
+
+class ViewIssuesCommand(sublime_plugin.TextCommand):
+
+    def is_enabled(self):
+        project_file = self.view.window().project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
+
+        return false
+
+    def run(self, edit):
+        project_path = os.path.dirname(self.view.window().project_file_name())
+        indexer = indexers[project_path]
+        cindexer_file = cindexer.File.from_name(indexer, self.view.file_name())
+        diagnostics = indexer.get_diagnostics(cindexer_file)
+
+        if len(diagnostics) == 0:
+            sublime.status_message('No issues in the file.')
+            return
+
+        diagnostic_strings = [
+            _get_diagnostic_summary(diagnostic) for diagnostic in diagnostics
+        ]
+
+        window = self.view.window()
+        initial_sel = self.view.sel()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(self.view)
+                self.view.sel().clear()
+                for region in initial_sel:
+                    self.view.sel().add(region)
+
+        def on_highlight(index):
+            diagnostic = diagnostics[index]
+            diagnostic_location_string = ':'.join([
+                diagnostic.location.file.name.decode('utf-8'),
+                str(diagnostic.location.line),
+                str(diagnostic.location.column)
+                ])
+            diagnostic_view = window.open_file(diagnostic_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            _update_view_diagnostics(diagnostic_view, indexer)
+            diagnostic_view.sel().clear()
+            diagnostic_view.sel().add(diagnostic_view.word(diagnostic.location.offset))
+
+        window.show_quick_panel(diagnostic_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)        
+
+
 
