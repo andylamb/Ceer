@@ -10,8 +10,7 @@ Indexer -- The main class of the module, most operations will run through an
 instance of this class
 
 Exceptions:
-ExistingPersistentIndexError
-NoPersistentIndexError
+InternalError
 '''
 from clang import cindex
 from fnmatch import fnmatch
@@ -22,44 +21,35 @@ import threading
 
 class CIndexerError(Exception):
 
-    '''Base class for all errors in this module.'''
-    pass
-
-
-class ExistingPersistentIndexError(CIndexerError):
-
     '''
-    Raised when from_empty is called on a project with an index file.
-
-    Attributes:
-    path -- the absolute path to the existing index file
+    Base class for all errors in this module.
     '''
+    
+    def __init__(self):
+        '''
+        Should only be subclassed.
+        '''
+        raise NotImplementedError
 
-    def __init__(self, path):
-        CIndexerError.__init__(self)
-        self.path = path
-
-
-class NoPersistentIndexError(CIndexerError):
-
-    '''
-    Raise when from_persistent is called on a project without an index file.
-
-    Attributes:
-    path -- the absolute path to the existing index file
-    '''
-
-    def __init__(self, path):
-        CIndexerError.__init__(self)
-        self.path = path
 
 class InternalError(CIndexerError):
     
+    '''Used mainly for debugging, by exposing state.'''
+    
     def __init__(self, **kwargs):
+        '''
+        Create an InternalError instance, passing in arbitrary arguments.
+        
+        Parameters:
+        **kwargs -- Any keyword parameters will be dumped.
+        '''
         CIndexerError.__init__(self)
         self.kwargs = kwargs
         
     def __str__(self):
+        '''
+        Returns the argument's __str__.
+        '''
         return self.kwargs.__str__()
             
 
@@ -181,12 +171,12 @@ class Indexer(object):
     get_references(source_location)
     get_diagnostics(cindexer_file)
     get_code_completion(cindexer_file)
-    add_file(path)
-    update_file(cindexer_file)
+    add_file(path, args, progress_callback)
+    update_file(cindexer_file, args, progress_callback)
 
     Class Methods:
-    from_empty(project_path)
-    from_persistent(project_path)
+    from_empty(project_path, args, folders, progress_callback)
+    from_persistent(project_path, args, folders, progress_callback)
 
     Static Methods:
     has_persistent_index(project_path)
@@ -204,15 +194,6 @@ class Indexer(object):
         self._translation_units = translation_units
         self._project_path = project_path
         self._clean_persistent = False
-
-    def __del__(self):
-        if self._clean_persistent:
-            self._connection.close()
-            index_db_path = os.path.join(
-                self._project_path, self._DB_FILE_NAME)
-            os.remove(index_db_path)
-
-            del self._index
 
     @staticmethod
     def has_persistent_index(project_path):
@@ -248,20 +229,23 @@ class Indexer(object):
         is parsing and building the index. This will be the first argument to 
         the callback function, if provided to from_empty or from_persistent.
         '''
+        
         STARTING_PARSE = 1
-        FINISHED_PARSE = 2
         '''
-        The Indexer instance is parsing source code. There will be a 'path' 
-        argument for the callback.
+        The Indexer instance is starting to parsing source code. There will be 
+        a 'path' argument for the callback.
         '''
-        STARTING_INDEXING = 3
-        FINISHED_INDEXING = 4
+        
+        STARTING_INDEXING = 2
         '''
-        The Indexer instance is traversing the ast and storing references and 
-        declarations in the index file. There will be a 'path' argument for 
-        the callback. 
+        The Indexer instance is starting to traversing the ast and storing 
+        references and declarations in the index file. There will be 'path',
+        'indexed', and 'total' arguments for the callback, which are the file,
+        number of files indexed, and total number of files indexed, 
+        respectively.
         '''
-        COMPLETED = 5
+        
+        COMPLETED = 3
         '''
         The Indexer instance is finished building the index.
         '''
@@ -280,22 +264,27 @@ class Indexer(object):
         Parameters:
         project_path -- an absolute or relative path to the project, as bytes
         or str
+        
+        args -- an optional array of command line arguments, as bytes or str
+        
+        folders -- an optional array of dictionaries. Each dictionary must 
+        contain 'path', an absolute or project relative path, as bytes or str. 
+        Each dictionary may contain 'file_exclude_patterns' and 
+        'folder_exclude_patterns', arrays of bytes or str, and 
+        'follow_symlinks', a bool. If provided, folders will determine which 
+        files are indexed, otherwise all files rooted at project_path will be 
+        indexed. 
+        
         progress_callback -- an optional callback function, that should expect
         an Indexer.IndexerStatus as its first positional argument, and have 
         **kwargs to accept any additional arguments, as described in the 
         IndexerStatus attribute docstrings.
-
-        Exceptions:
-        ExistingPersistentIndexError -- raised if there is an existing index
-        file
         '''
 
         if not os.path.isabs(project_path):
             project_path = os.path.abspath(project_path)
 
         index_db_path = os.path.join(project_path, cls._DB_FILE_NAME)
-        if os.path.exists(index_db_path):
-            raise ExistingPersistentIndexError(index_db_path)
 
         connection = sqlite3.connect(index_db_path, check_same_thread=False)
         sql_cursor = connection.cursor()
@@ -308,22 +297,21 @@ class Indexer(object):
             'CREATE UNIQUE INDEX path_offset_idx ON refs(path, offset)')
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path,
+        translation_units = cls._parse_project(index, project_path, args,
                                                folders, progress_callback)
 
-        for path, translation_unit in translation_units.items():
+        for i, (path, translation_unit) in \
+        enumerate(translation_units.items()):
+        
             if progress_callback:
                 progress_callback(
                     cls.IndexerStatus.STARTING_INDEXING,
-                    path=path.decode('utf-8'))
+                    path=path.decode('utf-8'),
+                    indexed=i,
+                    total=len(translation_units))
                 
             cls._update_db(
                 path, translation_unit.cursor, connection, sql_cursor)
-            
-            if progress_callback:
-                progress_callback(
-                    cls.IndexerStatus.FINISHED_INDEXING,
-                    path=path.decode('utf-8'))
 
         connection.commit()
 
@@ -348,26 +336,32 @@ class Indexer(object):
         Parameters:
         project_path -- an absolute or relative path to the project, as bytes
         or str
+        
+        args -- an optional array of command line arguments, as bytes or str
+        
+        folders -- an optional array of dictionaries. Each dictionary must 
+        contain 'path', an absolute or project relative path, as bytes or str. 
+        Each dictionary may contain 'file_exclude_patterns' and 
+        'folder_exclude_patterns', arrays of bytes or str, and 
+        'follow_symlinks', a bool. If provided, folders will determine which 
+        files are indexed, otherwise all files rooted at project_path will be 
+        indexed. 
+        
         progress_callback -- an optional callback function, that should expect
         an Indexer.IndexerStatus as its first positional argument, and have 
         **kwargs to accept any additional arguments, as described in the 
         IndexerStatus attribute docstrings.
-
-        Exceptions:
-        NoPersistentIndexError -- raise if there is not an existing index file.
         '''
 
         if not os.path.isabs(project_path):
             project_path = os.path.abspath(project_path)
 
         index_db_path = os.path.join(project_path, cls._DB_FILE_NAME)
-        if not os.path.exists(index_db_path):
-            raise NoPersistentIndexError(index_db_path)
 
         connection = sqlite3.connect(index_db_path, check_same_thread=False)
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path,
+        translation_units = cls._parse_project(index, project_path, args,
                                                folders, progress_callback)
 
         if progress_callback:
@@ -378,13 +372,14 @@ class Indexer(object):
 
     def clean_persistent(self):
         '''
-        Remove the database file when the Indexer instance is deleted.
+        Remove the database file associated with the Indexer instance.
 
-        This method should be called before the Indexer instance is
-        deleted. After the instance is deleted, a new index should
-        be created using from_empty.
+        The Indexer instance should not be used after the call. After the 
+        instance is deleted, a new index can be created using from_empty.
         '''
-        self._clean_persistent = True
+        self._connection.close()
+        index_db_path = os.path.join(self._project_path, self._DB_FILE_NAME)
+        os.remove(index_db_path)
 
     def get_definition(self, source_location):
         '''
@@ -471,10 +466,13 @@ class Indexer(object):
 
     def get_diagnostics(self, cindexer_file=None):
         '''
-        Return an iteratable and _indexable object containing the diagnostics.
+        Return a DiagnosticsItr containing all the issues in the index, or in a
+        file.
 
         Parameters:
-        cindexer_file -- A File instance, created by a call to from_name.
+        cindexer_file -- an optional File instance, created by a call to 
+        from_name. If provided, only return the issues for the file, otherwise
+        return all issues in the index.
         '''
         if cindexer_file:
             translation_unit = self._translation_units[cindexer_file.name]
@@ -511,7 +509,7 @@ class Indexer(object):
             source_location.column,
             unsaved_files)
 
-    def add_file(self, path, progress_callback=None):
+    def add_file(self, path, args=None, progress_callback=None):
         '''
         Add a file to the index, and return a new File instance.
 
@@ -520,6 +518,11 @@ class Indexer(object):
 
         Parameters:
         path -- An absolute or project relative path, as bytes or str
+        args -- an optional array of command line arguments, as bytes or str
+        progress_callback -- an optional callback function, that should expect
+        an Indexer.IndexerStatus as its first positional argument, and have 
+        **kwargs to accept any additional arguments, as described in the 
+        IndexerStatus attribute docstrings.
         '''
         if type(path) is str:
             path = bytes(path, 'utf-8')
@@ -532,10 +535,6 @@ class Indexer(object):
             
         translation_unit = self._index.parse(path)
         
-        if progress_callback:
-            progress_callback(self.IndexerStatus.FINISHED_PARSE,
-                              path=path.decode('utf_8'))
-        
         self._translation_units[path] = translation_unit
         
         if progress_callback:
@@ -545,15 +544,11 @@ class Indexer(object):
         Indexer._update_db(
             path, translation_unit.cursor,
             self._connection, self._connection.cursor())
-        
-        if progress_callback:
-            progress_callback(self.IndexerStatus.FINISHED_INDEXING,
-                              path=path.decode('utf_8'))
 
         self._connection.commit()
         return self._file_from_name(path)
 
-    def update_file(self, cindexer_file, progress_callback=None):
+    def update_file(self, cindexer_file, args=None, progress_callback=None):
         '''
         Update a file in the index, and return a new File instance.
 
@@ -563,6 +558,11 @@ class Indexer(object):
         Parameters:
         cindexer_file -- A file instance, created by a call to from_name.
         This file should not be used after update_index returns.
+        args -- an optional array of command line arguments, as bytes or str
+        progress_callback -- an optional callback function, that should expect
+        an Indexer.IndexerStatus as its first positional argument, and have 
+        **kwargs to accept any additional arguments, as described in the 
+        IndexerStatus attribute docstrings.
         '''
 
         path = cindexer_file.name
@@ -575,10 +575,6 @@ class Indexer(object):
             
         translation_unit.reparse()
         
-        if progress_callback:
-            progress_callback(self.IndexerStatus.FINISHED_PARSE,
-                              path=path.decode('utf_8'))
-        
         sql_cursor.execute('DELETE FROM defs WHERE path = ?', (path,))
         sql_cursor.execute('DELETE FROM refs WHERE path = ?', (path,))
         
@@ -589,10 +585,6 @@ class Indexer(object):
         Indexer._update_db(
             path, translation_unit.cursor,
             self._connection, self._connection.cursor())
-        
-        if progress_callback:
-            progress_callback(self.IndexerStatus.FINISHED_INDEXING,
-                              path=path.decode('utf_8'))
 
         self._connection.commit()
         return self._file_from_name(path)
@@ -614,14 +606,11 @@ class Indexer(object):
                               path=abs_path.decode('utf-8'))
             
         translation_units[abs_path] = index.parse(abs_path)
-        
-        if progress_callback:
-            progress_callback(
-                cls.IndexerStatus.FINISHED_PARSE,
-                path=abs_path.decode('utf-8'))
 
     @classmethod
-    def _parse_project(cls, index, project_path, folders, progress_callback):
+    def _parse_project(cls, index, project_path, args, 
+                       folders, progress_callback):
+        
         translation_units = {}
         started_threads = []
         if folders and len(folders) > 0:

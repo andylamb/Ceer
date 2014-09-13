@@ -28,21 +28,66 @@ severity_key = {
     4 : 'Fatal'
 }
 
+class StatusUpdater(object):
+
+    _waiting_status_strs = [
+        '[=  ] ',
+        '[ = ] ',
+        '[  =] ',
+        '[ = ] '
+    ]
+
+    _updating = False 
+    _updating_thread = None
+    _status_message = ''
+    _status_message_lock = threading.Lock()
+
+    @classmethod
+    def start_update(cls):
+        cls._updating = True
+        cls._updating_thread = threading.Thread(target=cls._update_target)
+        cls._updating_thread.start()
+
+    @classmethod 
+    def set_status_message(cls, status_message):
+        cls._status_message_lock.acquire()
+        cls._status_message = status_message
+        cls._status_message_lock.release()
+
+    @classmethod
+    def end_update(cls, status_message=None):
+        cls._updating = False
+        cls._updating_thread.join()
+        if status_message:
+            sublime.status_message(status_message)
+
+    @classmethod
+    def _update_target(cls):
+        i = 0
+        while cls._updating:
+            status_message = cls._waiting_status_strs[i]
+            cls._status_message_lock.acquire()
+            if cls._status_message:
+                status_message += ': ' + cls._status_message
+            cls._status_message_lock.release()
+            sublime.status_message(status_message)
+            i = (i + 1) % len(cls._waiting_status_strs)
+            time.sleep(0.3)
+
 def _progress_callback(indexer_status, **kwargs):
     if indexer_status == cindexer.Indexer.IndexerStatus.STARTING_PARSE:
         message = 'Parsing file ' + kwargs['path']
-    elif indexer_status == cindexer.Indexer.IndexerStatus.FINISHED_PARSE:
-        message = 'Finished parsing file ' + kwargs['path']
     elif indexer_status == cindexer.Indexer.IndexerStatus.STARTING_INDEXING:
-        message = 'Indexing file ' + kwargs['path']
-    elif indexer_status == cindexer.Indexer.IndexerStatus.FINISHED_INDEXING:
-        message = 'Finished indexing file ' + kwargs['path']
+        message = 'Indexing file ' + kwargs['path'] + ' (' + str(kwargs['indexed'] + 1) + ' of ' + str(kwargs['total']) + ')'
     elif indexer_status == cindexer.Indexer.IndexerStatus.COMPLETED:
         message = 'Built index for ' + kwargs['project_path']
+        StatusUpdater.end_update(message)
+        return
 
-    sublime.set_timeout(sublime.status_message(message), 0)
+    StatusUpdater.set_status_message(message)
 
 def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
+    StatusUpdater.start_update()
     indexer = cindexer.Indexer.from_persistent(project_path, folders=folders, progress_callback=_progress_callback)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
@@ -52,6 +97,7 @@ def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
         sublime.error_message('There are ' + str(num_diagnostics) + ' issues in the project, and indexing may be incomplete or inaccurate.')
 
 def _from_empty_wrapper(project_path, folders, _progress_callback, window):
+    StatusUpdater.start_update()
     indexer = cindexer.Indexer.from_empty(project_path, folders=folders, progress_callback=_progress_callback)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
@@ -134,8 +180,10 @@ class SublimeIndexerListener(sublime_plugin.EventListener):
                 name = view.file_name()
                 if indexer.indexed(name):
                     cindexer_file = cindexer.File.from_name(indexer, view.file_name())
+                    StatusUpdater.start_update()
                     cindexer_file = indexer.update_file(cindexer_file, _progress_callback)
                 else:
+                    StatusUpdater.start_update()
                     cindexer_file = indexer.add_file(name, _progress_callback)
 
                 _update_view_diagnostics(view, indexer.get_diagnostics(cindexer_file))
