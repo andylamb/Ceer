@@ -16,6 +16,7 @@ from clang import cindex
 from fnmatch import fnmatch
 import os
 import sqlite3
+import subprocess
 import threading
 
 
@@ -43,7 +44,6 @@ class InternalError(CIndexerError):
         Parameters:
         **kwargs -- Any keyword parameters will be dumped.
         '''
-        CIndexerError.__init__(self)
         self.kwargs = kwargs
         
     def __str__(self):
@@ -175,8 +175,10 @@ class Indexer(object):
     update_file(cindexer_file, args, progress_callback)
 
     Class Methods:
-    from_empty(project_path, args, folders, progress_callback)
-    from_persistent(project_path, args, folders, progress_callback)
+    from_empty(project_path, folders, progress_callback, 
+               cmakelists_path, makefile_path)
+    from_persistent(project_path, folders, progress_callback, 
+                    cmakelists_path, makefile_path)
 
     Static Methods:
     has_persistent_index(project_path)
@@ -250,9 +252,10 @@ class Indexer(object):
         The Indexer instance is finished building the index.
         '''
 
+
     @classmethod
-    def from_empty(cls, project_path, args=None, 
-                   folders=None, progress_callback=None):
+    def from_empty(cls, project_path, folders=None, progress_callback=None, 
+                   cmakelists_path=None, makefile_path=None):
         '''
         Create an Indexer instance from a project that has not been indexed.
 
@@ -264,8 +267,6 @@ class Indexer(object):
         Parameters:
         project_path -- an absolute or relative path to the project, as bytes
         or str
-        
-        args -- an optional array of command line arguments, as bytes or str
         
         folders -- an optional array of dictionaries. Each dictionary must 
         contain 'path', an absolute or project relative path, as bytes or str. 
@@ -279,6 +280,14 @@ class Indexer(object):
         an Indexer.IndexerStatus as its first positional argument, and have 
         **kwargs to accept any additional arguments, as described in the 
         IndexerStatus attribute docstrings.
+        
+        cmakelists_path -- an optional path to the CMakeLists.txt file 
+        project's, which will be used to generate a compilation commands 
+        database.
+        
+        makefile_path -- an optional path to a Makefile, which will be used to 
+        generate a compilation commands database. If both cmakelists_path and 
+        makefile_path are provided, cmakelists_path will be used.
         '''
 
         if not os.path.isabs(project_path):
@@ -297,8 +306,9 @@ class Indexer(object):
             'CREATE UNIQUE INDEX path_offset_idx ON refs(path, offset)')
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path, args,
-                                               folders, progress_callback)
+        translation_units = cls._parse_project(
+            index, project_path, folders, 
+            progress_callback, cmakelists_path, makefile_path)
 
         for i, (path, translation_unit) in \
         enumerate(translation_units.items()):
@@ -322,8 +332,9 @@ class Indexer(object):
         return cls(connection, index, translation_units, project_path)
 
     @classmethod
-    def from_persistent(cls, project_path, args=None,
-                        folders=None, progress_callback=None):
+    def from_persistent(
+        cls, project_path, folders=None, progress_callback=None, 
+        cmakelists_path=None, makefile_path=None):
         '''
         Create an Indexer instance from an existing index.
 
@@ -337,8 +348,6 @@ class Indexer(object):
         project_path -- an absolute or relative path to the project, as bytes
         or str
         
-        args -- an optional array of command line arguments, as bytes or str
-        
         folders -- an optional array of dictionaries. Each dictionary must 
         contain 'path', an absolute or project relative path, as bytes or str. 
         Each dictionary may contain 'file_exclude_patterns' and 
@@ -351,6 +360,14 @@ class Indexer(object):
         an Indexer.IndexerStatus as its first positional argument, and have 
         **kwargs to accept any additional arguments, as described in the 
         IndexerStatus attribute docstrings.
+        
+        cmakelists_path -- an optional path to the CMakeLists.txt file 
+        project's, which will be used to generate a compilation commands 
+        database.
+        
+        makefile_path -- an optional path to a Makefile, which will be used to 
+        generate a compilation commands database. If both cmakelists_path and 
+        makefile_path are provided, cmakelists_path will be used.
         '''
 
         if not os.path.isabs(project_path):
@@ -361,8 +378,9 @@ class Indexer(object):
         connection = sqlite3.connect(index_db_path, check_same_thread=False)
 
         index = cindex.Index.create()
-        translation_units = cls._parse_project(index, project_path, args,
-                                               folders, progress_callback)
+        translation_units = cls._parse_project(
+            index, project_path, folders, progress_callback, 
+            cmakelists_path, makefile_path)
 
         if progress_callback:
             progress_callback(cls.IndexerStatus.COMPLETED,
@@ -509,7 +527,7 @@ class Indexer(object):
             source_location.column,
             unsaved_files)
 
-    def add_file(self, path, args=None, progress_callback=None):
+    def add_file(self, path, progress_callback=None):
         '''
         Add a file to the index, and return a new File instance.
 
@@ -518,7 +536,6 @@ class Indexer(object):
 
         Parameters:
         path -- An absolute or project relative path, as bytes or str
-        args -- an optional array of command line arguments, as bytes or str
         progress_callback -- an optional callback function, that should expect
         an Indexer.IndexerStatus as its first positional argument, and have 
         **kwargs to accept any additional arguments, as described in the 
@@ -548,7 +565,7 @@ class Indexer(object):
         self._connection.commit()
         return self._file_from_name(path)
 
-    def update_file(self, cindexer_file, args=None, progress_callback=None):
+    def update_file(self, cindexer_file, progress_callback=None):
         '''
         Update a file in the index, and return a new File instance.
 
@@ -580,7 +597,9 @@ class Indexer(object):
         
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
-                              path=path.decode('utf_8'))
+                              path=path.decode('utf_8'),
+                              indexed=1,
+                              total=1)
         
         Indexer._update_db(
             path, translation_unit.cursor,
@@ -599,17 +618,68 @@ class Indexer(object):
         return any(file_name.endswith(ext) for ext in exts)
     
     @classmethod
-    def _parse_wrapper(cls, translation_units, index, 
-                       abs_path, progress_callback):
+    def _parse_wrapper(cls, translation_units, index, abs_path, 
+                       progress_callback, compilation_database):
         if progress_callback:
             progress_callback(cls.IndexerStatus.STARTING_PARSE,
                               path=abs_path.decode('utf-8'))
             
-        translation_units[abs_path] = index.parse(abs_path)
+        compile_commands = None
+        if compilation_database:
+            compile_commands = compilation_database.getCompileCommands(
+                abs_path)
+            
+        args = []
+        if compile_commands:
+#             args = [arg for arg in compile_commands[0].arguments]
+            for command in compile_commands:
+                for arg in command.arguments:
+                    if ((arg.decode('utf-8').startswith('-I') or
+                         arg.decode('utf-8').startswith('-D') or
+                         arg.decode('utf-8').startswith('-W')) and 
+                         arg not in args):
+                        args.append(arg)
+
+        translation_units[abs_path] = index.parse(abs_path, args=args)
 
     @classmethod
-    def _parse_project(cls, index, project_path, args, 
-                       folders, progress_callback):
+    def _parse_project(cls, index, project_path, folders, progress_callback, 
+                       cmakelist_path, makefile_path):
+        
+        existing_compilation_database = False
+        
+        if os.path.exists(os.path.join(project_path, 'compile_commands.json')):
+            existing_compilation_database = True
+        elif cmakelist_path:
+            if not os.path.isabs(cmakelist_path):
+                cmakelist_path = os.path.join(project_path, cmakelist_path)
+            subprocess.call(
+                ['cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 {}'.format(
+                    cmakelist_path)], 
+                cwd=project_path, shell=True)
+            
+        elif makefile_path:
+
+            bin_path = os.path.join(os.path.dirname(__file__), 'bin/bear')
+            out_path = os.path.join(project_path, 'compile_commands.json')
+            lib_path = os.path.join(os.path.dirname(__file__), 
+                                    'lib/libear.dylib')
+            conf_path = os.path.join(os.path.dirname(__file__), 
+                                     'etc/bear.conf')
+            if not os.path.isabs(makefile_path):
+                makefile_path = os.path.join(project_path, makefile_path)
+            subprocess.call(
+                [bin_path, 
+                 '-o', out_path, 
+                 '-l', lib_path,
+                 '-c', conf_path,
+                 '--', 'make'], 
+                cwd=makefile_path)
+            
+        compilation_database = None
+        if existing_compilation_database or cmakelist_path or makefile_path:
+            compilation_database = cindex.CompilationDatabase.fromDirectory(
+                bytes(project_path,'utf-8'))
         
         translation_units = {}
         started_threads = []
@@ -649,8 +719,8 @@ class Indexer(object):
                             abs_path = bytes(abs_path, 'utf-8')
                             indexer_thread = threading.Thread(
                                 target=cls._parse_wrapper, 
-                                args=(translation_units, index, 
-                                      abs_path, progress_callback))
+                                args=(translation_units, index, abs_path, 
+                                      progress_callback, compilation_database))
                             indexer_thread.start()
                             started_threads.append(indexer_thread)
 
@@ -663,7 +733,7 @@ class Indexer(object):
                             subdirs.remove(subdir)
 
         else:
-            for path, subdirs, files in os.walk(folder_path):
+            for path, subdirs, files in os.walk(project_path):
                 for file in files:
                     if cls._indexable(file):
 
@@ -671,8 +741,8 @@ class Indexer(object):
                         abs_path = bytes(abs_path, 'utf-8')
                         indexer_thread = threading.Thread(
                             target=cls._parse_wrapper, 
-                            args=(translation_units, index, 
-                                  abs_path, progress_callback))
+                            args=(translation_units, index, abs_path, 
+                                  progress_callback, compilation_database))
                         indexer_thread.start()
                         started_threads.append(indexer_thread)
 

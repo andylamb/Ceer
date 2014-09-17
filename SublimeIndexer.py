@@ -14,7 +14,7 @@ if MODULES_PATH not in sys.path:
 import cindexer
 
 if not cindexer.Config.loaded:
-    LIBCLANG_PATH = os.path.join(os.path.dirname(__file__), 'lib')
+    LIBCLANG_PATH = os.path.join(MODULES_PATH, 'lib')
     cindexer.Config.set_library_path(LIBCLANG_PATH)
 
 
@@ -88,7 +88,7 @@ def _progress_callback(indexer_status, **kwargs):
 
 def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
     StatusUpdater.start_update()
-    indexer = cindexer.Indexer.from_persistent(project_path, folders=folders, progress_callback=_progress_callback)
+    indexer = cindexer.Indexer.from_persistent(project_path, folders, _progress_callback)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
 
@@ -96,9 +96,9 @@ def _from_persistent_wrapper(project_path, folders, _progress_callback, window):
     if num_diagnostics > 0:
         sublime.error_message('There are ' + str(num_diagnostics) + ' issues in the project, and indexing may be incomplete or inaccurate.')
 
-def _from_empty_wrapper(project_path, folders, _progress_callback, window):
+def _from_empty_wrapper(project_path, folders, _progress_callback, window, cmakelists_path, makefile_path):
     StatusUpdater.start_update()
-    indexer = cindexer.Indexer.from_empty(project_path, folders=folders, progress_callback=_progress_callback)
+    indexer = cindexer.Indexer.from_empty(project_path, folders, _progress_callback, cmakelists_path, makefile_path)
     indexers[project_path] = indexer
     _update_window_diagnostics(window, indexer)
 
@@ -303,8 +303,28 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
 
         project_path = os.path.dirname(project_file)
         project_data = self.window.project_data()
+
+        indexer_data = project_data.get('sublime_indexer')
+        cmakelists_path = None
+        makefile_path = None
+        if indexer_data:
+            cmakelists_path = indexer_data.get('cmakelists_path')
+            makefile_path = indexer_data.get('makefile_path')
+
+        if not indexer_data or not (makefile_path or cmakelists_path):
+            if sublime.ok_cancel_dialog(
+                'SublimeIndexer can use either a CMakeLists.txt or Makefile to generate a more accurate index by using the exact commands used to compile to project. To enable this feature, in the .sublime-project file, under the \"sublime_indexer\" section, set either \"cmakelists_path\" or \"makefile_path\". If you would like to stop building the index, to edit the .sublime-project file, click \"OK\". To continue building the index, click \"Cancel\"'):
+                if not indexer_data:
+                    indexer_data = {"cmakelists_path": "", "makefile_path": ""}
+                    project_data['sublime_indexer'] = indexer_data
+                    self.window.set_project_data(project_data)
+
+                return
+
+
+
         folders = project_data.get('folders')
-        indexer_thread = threading.Thread(target=_from_empty_wrapper, args=(project_path, folders, _progress_callback, self.window))
+        indexer_thread = threading.Thread(target=_from_empty_wrapper, args=(project_path, folders, _progress_callback, self.window, cmakelists_path, makefile_path))
         indexer_thread.start()
         
 
