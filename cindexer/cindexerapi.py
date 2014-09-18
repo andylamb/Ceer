@@ -607,7 +607,7 @@ class Indexer(object):
     @staticmethod
     def _indexable(file_name):
         file_name = str(file_name)
-        exts = ['.c', '.h', '.cpp']
+        exts = ['.c', '.cpp']
         return any(file_name.endswith(ext) for ext in exts)
     
     @classmethod
