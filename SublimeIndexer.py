@@ -6,17 +6,12 @@ import time
 import sublime
 import sublime_plugin
 
-MODULES_PATH = os.path.join(os.path.dirname(__file__), 'modules')
+SUBLIME_INDEXER_PATH = os.path.dirname(os.path.abspath(__file__))
 
-if MODULES_PATH not in sys.path:
-    sys.path.append(MODULES_PATH)
+if SUBLIME_INDEXER_PATH not in sys.path:
+    sys.path.append(SUBLIME_INDEXER_PATH)
 
 import cindexer
-
-if not cindexer.Config.loaded:
-    LIBCLANG_PATH = os.path.join(MODULES_PATH, 'lib')
-    cindexer.Config.set_library_path(LIBCLANG_PATH)
-
 
 indexers = {}
 current_diagnostics = {}

@@ -12,12 +12,32 @@ instance of this class
 Exceptions:
 InternalError
 '''
-from clang import cindex
 from fnmatch import fnmatch
 import os
-import sqlite3
 import subprocess
+import sys
 import threading
+
+DEPENDENCIES_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 
+                                 'dependencies')
+MODULES_PATH = os.path.join(DEPENDENCIES_PATH, 'modules')
+LIB_DYNLOAD_PATH = os.path.join(MODULES_PATH, 'lib-dynload')
+
+if MODULES_PATH not in sys.path:
+    sys.path.append(MODULES_PATH)
+if LIB_DYNLOAD_PATH not in sys.path:
+    sys.path.append(LIB_DYNLOAD_PATH)
+
+import sqlite3
+from clang import cindex
+
+LIB_PATH = os.path.join(DEPENDENCIES_PATH, 'lib')
+
+if not cindex.Config.loaded:
+    cindex.Config.set_library_path(LIB_PATH)
+    
+BIN_PATH = os.path.join(DEPENDENCIES_PATH, 'bin')
+ETC_PATH = os.path.join(DEPENDENCIES_PATH, 'etc')
 
 
 class CIndexerError(Exception):
@@ -64,35 +84,6 @@ class ClassProperty(property):
             raise AttributeError('unreadable attribute')
 
         return self.fget(objtype)
-
-
-class Config:
-
-    '''
-    Provides an interface to cindex.Config
-
-    Methods:
-    set_library_path(path)
-
-    Attributes:
-    loaded
-    '''
-
-    set_library_path = cindex.Config.set_library_path
-    '''
-    Sets the path to libclang.dylib.
-
-    Must be called before an Indexer instance is created, if
-    cindex.Config.loaded is False.
-
-    Parameters:
-    path -- an absolute or relative path to the library, as str.
-    '''
-
-    @ClassProperty
-    def loaded(cls):
-        '''Returns True if libclang has been loaded'''
-        return cindex.Config.loaded
 
 
 class File:
@@ -548,7 +539,7 @@ class Indexer(object):
 
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_PARSE,
-                              path=path)
+                              path=path.decode('utf-8'))
             
         translation_unit = self._index.parse(path)
         
@@ -556,7 +547,9 @@ class Indexer(object):
         
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
-                              path=path.decode('utf_8'))
+                              path=path.decode('utf_8'),
+                              indexed=0,
+                              total=1)
         
         Indexer._update_db(
             path, translation_unit.cursor,
@@ -598,7 +591,7 @@ class Indexer(object):
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
                               path=path.decode('utf_8'),
-                              indexed=1,
+                              indexed=0,
                               total=1)
         
         Indexer._update_db(
@@ -631,7 +624,6 @@ class Indexer(object):
             
         args = []
         if compile_commands:
-#             args = [arg for arg in compile_commands[0].arguments]
             for command in compile_commands:
                 for arg in command.arguments:
                     if ((arg.decode('utf-8').startswith('-I') or
@@ -660,19 +652,14 @@ class Indexer(object):
             
         elif makefile_path:
 
-            bin_path = os.path.join(os.path.dirname(__file__), 'bin/bear')
             out_path = os.path.join(project_path, 'compile_commands.json')
-            lib_path = os.path.join(os.path.dirname(__file__), 
-                                    'lib/libear.dylib')
-            conf_path = os.path.join(os.path.dirname(__file__), 
-                                     'etc/bear.conf')
             if not os.path.isabs(makefile_path):
                 makefile_path = os.path.join(project_path, makefile_path)
             subprocess.call(
-                [bin_path, 
+                [os.path.join(BIN_PATH, 'bear'), 
                  '-o', out_path, 
-                 '-l', lib_path,
-                 '-c', conf_path,
+                 '-l', os.path.join(LIB_PATH, 'libear.dylib'),
+                 '-c', os.path.join(ETC_PATH, 'bear.conf'),
                  '--', 'make'], 
                 cwd=makefile_path)
             
