@@ -740,7 +740,8 @@ class Indexer(object):
     
     @classmethod
     def _parse_wrapper(cls, translation_units, index, abs_path, 
-                       progress_callback, compilation_database):
+                       progress_callback, compilation_database, 
+                       started_threads):
         if progress_callback:
             progress_callback(cls.IndexerStatus.STARTING_PARSE,
                               path=abs_path.decode('utf-8'))
@@ -759,8 +760,30 @@ class Indexer(object):
                          arg.decode('utf-8').startswith('-W')) and 
                          arg not in args):
                         args.append(arg)
+                        
+        cache_dir = os.path.join(os.path.dirname(abs_path), 
+                                 bytes('.cindexer.cache', 'utf-8'))
+        if not os.path.exists(cache_dir):
+            os.mkdir(cache_dir)
+        cache_file = os.path.join(
+            cache_dir, 
+            os.path.basename(abs_path + bytes('.ast','utf-8')))
 
-        translation_units[abs_path] = index.parse(abs_path, args=args)
+        if os.path.exists(cache_file):
+            translation_unit = cindex.TranslationUnit.from_ast_file(cache_file,
+                                                                    index)
+        else:
+            translation_unit = cindex.TranslationUnit.from_source(abs_path,
+                                                                  args=args,
+                                                                  index=index)
+        translation_units[abs_path] = translation_unit
+        translation_unit.save(cache_file)
+#         def save_wrapper(translation_unit, path):
+#             translation_unit.save(path)
+#             
+#         save_thread = threading.Thread(target=save_wrapper, 
+#                                        args=(translation_unit, abs_path))
+#         started_threads.append(save_thread)
 
     @classmethod
     def _parse_project(cls, index, project_path, folders, progress_callback, 
@@ -835,7 +858,8 @@ class Indexer(object):
                             indexer_thread = threading.Thread(
                                 target=cls._parse_wrapper, 
                                 args=(translation_units, index, abs_path, 
-                                      progress_callback, compilation_database))
+                                      progress_callback, compilation_database,
+                                      started_threads))
                             indexer_thread.start()
                             started_threads.append(indexer_thread)
 
