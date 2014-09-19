@@ -378,16 +378,15 @@ class SideBarViewIssuesCommand(sublime_plugin.WindowCommand):
 
         def on_highlight(index):
             diagnostic = diagnostics[index]
-            if diagnostic.location.file:
-                diagnostic_location_string = ':'.join([
-                    diagnostic.location.file.name.decode('utf-8'),
-                    str(diagnostic.location.line),
-                    str(diagnostic.location.column)
-                    ])
-                diagnostic_view = window.open_file(diagnostic_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
-                _update_view_diagnostics(diagnostic_view, indexer)
-                diagnostic_view.sel().clear()
-                diagnostic_view.sel().add(diagnostic_view.word(diagnostic.location.offset))
+            diagnostic_location_string = ':'.join([
+                diagnostic.location.file.name.decode('utf-8'),
+                str(diagnostic.location.line),
+                str(diagnostic.location.column)
+                ])
+            diagnostic_view = window.open_file(diagnostic_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            _update_view_diagnostics(diagnostic_view, indexer)
+            diagnostic_view.sel().clear()
+            diagnostic_view.sel().add(diagnostic_view.word(diagnostic.location.offset))
 
         self.window.show_quick_panel(diagnostic_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)        
 
