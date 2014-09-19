@@ -773,9 +773,10 @@ class Indexer(object):
         elif cmakelist_path:
             if not os.path.isabs(cmakelist_path):
                 cmakelist_path = os.path.join(project_path, cmakelist_path)
+
             subprocess.call(
-                ['cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 {}'.format(
-                    cmakelist_path)], 
+                'cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 {}'.format(
+                    cmakelist_path), 
                 cwd=project_path, shell=True)
             
         elif makefile_path:
