@@ -181,7 +181,7 @@ class SublimeIndexerListener(sublime_plugin.EventListener):
                     StatusUpdater.start_update()
                     cindexer_file = indexer.add_file(name, _progress_callback)
 
-                _update_view_diagnostics(view, indexer.get_diagnostics(cindexer_file))
+                _update_view_diagnostics(view, indexer)
 
     def on_load(self, view):
         window = view.window()
@@ -492,6 +492,71 @@ class ListReferencesCommand(sublime_plugin.TextCommand):
             ref_view.sel().add(ref_view.word(ref_cursor.location.offset))
 
         self.view.window().show_quick_panel(reference_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
+
+
+class ExpandSuperclassesCommand(sublime_plugin.TextCommand):
+
+    def is_enabled(self):
+        project_file = self.view.window().project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
+
+        return False
+
+    def run(self, edit):
+        if len(self.view.sel()) != 1:
+            sublime.error_message('The expand superclasses command requires a single selection')
+            return
+
+        indexer = indexers[os.path.dirname(self.view.window().project_file_name())]
+        offset = self.view.sel()[0].b 
+        cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
+        source_location = cindexer.SourceLocation.from_offset(indexer, cindexer_file, offset)
+        superclasses = indexer.get_superclasses(source_location)  
+
+        if len(superclasses) < 1:
+            sublime.status_message('No superclasses found in the index.')
+            return
+
+        superclasses.reverse()
+
+        superclass_strings = []
+        for cursor in superclasses:
+             superclass_string = ':'.join([
+                os.path.basename(cursor.location.file.name.decode('utf-8')),
+                str(cursor.location.line),
+                str(cursor.location.column),
+                cursor.displayname.decode('utf-8')
+                ])
+             superclass_strings.append(superclass_string)
+
+        # Capture window so it can be used in the callback
+        window = self.view.window()
+        initial_sel = self.view.sel()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(self.view)
+                self.view.sel().clear()
+                for region in initial_sel:
+                    self.view.sel().add(region)
+
+        def on_highlight(index):
+            super_cursor = superclasses[index]
+            super_location_string = ':'.join([
+                super_cursor.location.file.name.decode('utf-8'),
+                str(super_cursor.location.line),
+                str(super_cursor.location.column)
+                ])
+            super_view = window.open_file(super_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            super_view.sel().clear()
+            super_view.sel().add(super_view.word(super_cursor.location.offset))  
+
+        self.view.window().show_quick_panel(superclass_strings, on_done, sublime.MONOSPACE_FONT, len(superclasses) - 1, on_highlight)
 
 
 class ViewIssuesCommand(sublime_plugin.TextCommand):

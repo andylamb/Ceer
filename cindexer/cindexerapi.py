@@ -295,6 +295,9 @@ class Indexer(object):
                                  offset INT, enclosing_offset INT)''')
         sql_cursor.execute(
             'CREATE UNIQUE INDEX path_offset_idx ON refs(path, offset)')
+        sql_cursor.execute(
+            '''CREATE TABLE classes(sub_usr TEXT, super_usr TEXT, 
+                                    sub_path TEXT, super_path TEXT)''')
 
         index = cindex.Index.create()
         translation_units = cls._parse_project(
@@ -445,14 +448,14 @@ class Indexer(object):
         cursor = cindex.Cursor.from_location(translation_unit, source_location)
         cursor = cursor.referenced
 
+        result = []
         if not cursor:
-            return []
+            return result
 
         sql_cursor = self._connection.cursor()
         sql_cursor.execute(
             'SELECT path, offset, enclosing_offset FROM refs WHERE usr = ?',
             (cursor.get_usr(),))
-        result = []
 
         for path, offset, enclosing_offset in sql_cursor.fetchall():
             ref_translation_unit = self._translation_units[path]
@@ -472,7 +475,50 @@ class Indexer(object):
             result.append((ref_cursor, enclosing_cursor))
 
         return result
+    
+    def get_superclasses(self, source_location):
+        translation_unit = self._translation_units[source_location.file.name]
+        cursor = cindex.Cursor.from_location(translation_unit, source_location)
+        cursor = cursor.referenced
 
+        superclasses = []
+        if not cursor:
+            return superclasses
+        
+        sql_cursor = self._connection.cursor()
+        sub_usrs = [cursor.get_usr()]
+        while len(sub_usrs) > 0:
+            super_usrs = []
+            for sub_usr in sub_usrs:
+                sql_cursor.execute(
+                    'SELECT super_usr FROM classes WHERE sub_usr = ?', 
+                    (sub_usr,))
+                super_usrs.extend([
+                    result[0] for result in sql_cursor.fetchall()
+                ])
+                
+            for super_usr in super_usrs:
+                sql_cursor.execute(
+                    'SELECT path, offset FROM defs WHERE usr = ?',
+                    (super_usr,))
+                result = sql_cursor.fetchone()
+
+                if result:
+                    path, offset = result
+                    super_translation_unit = self._translation_units[path]
+                    super_file = cindex.File.from_name(
+                        super_translation_unit, path)
+                    super_source_location = cindex.SourceLocation.from_offset(
+                        super_translation_unit, super_file, offset)
+                    super_cursor = cindex.Cursor.from_location(
+                        super_translation_unit, super_source_location)
+                    superclasses.append(super_cursor)
+                    
+            sub_usrs = super_usrs
+            
+        return superclasses
+            
+        
     def get_diagnostics(self, cindexer_file=None):
         '''
         Return a DiagnosticsItr containing all the issues in the index, or in a
@@ -556,6 +602,11 @@ class Indexer(object):
             self._connection, self._connection.cursor())
 
         self._connection.commit()
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.COMPLETED,
+                              project_path=self._project_path)
+        
         return self._file_from_name(path)
 
     def update_file(self, cindexer_file, progress_callback=None):
@@ -587,6 +638,9 @@ class Indexer(object):
         
         sql_cursor.execute('DELETE FROM defs WHERE path = ?', (path,))
         sql_cursor.execute('DELETE FROM refs WHERE path = ?', (path,))
+        sql_cursor.execute(
+            'DELETE FROM classes WHERE sub_path = ? or super_path = ?', 
+            (path, path))
         
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
@@ -599,6 +653,11 @@ class Indexer(object):
             self._connection, self._connection.cursor())
 
         self._connection.commit()
+        
+        if progress_callback:
+            progress_callback(self.IndexerStatus.COMPLETED,
+                              project_path=self._project_path)
+        
         return self._file_from_name(path)
 
     _DB_FILE_NAME = '.cindexer.db'
@@ -761,46 +820,52 @@ class Indexer(object):
             cindex.CursorKind.CONVERSION_FUNCTION
         ]
         return cursor.kind in kinds
+    
+    @staticmethod
+    def _is_base_specifier(cursor):
+        kinds = [
+            cindex.CursorKind.CXX_BASE_SPECIFIER
+        ]
+        return cursor.kind in kinds
 
     @staticmethod
     def _update_db(path, cursor, connection,
                    sql_cursor, enclosing_def_cursor=None):
-        try:
-            if cursor.is_definition():
-                sql_cursor.execute(
-                    'INSERT INTO defs VALUES (?, ?, ?)',
-                    (cursor.get_usr(), path, cursor.location.offset))
-                if Indexer._is_enclosing_def(cursor):
-                    enclosing_def_cursor = cursor
-            elif (cursor.referenced and 
-                  cursor != cursor.referenced and 
-                  cursor.location.file and
-                  cursor.location.file.name == path):
-                
-                if enclosing_def_cursor:
-                    enclosing_offset = enclosing_def_cursor.location.offset
-                else:
-                    enclosing_offset = -1
-    
-                sql_cursor.execute(
-                    'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
-                    (cursor.referenced.get_usr(),
-                     path,
-                     cursor.location.offset,
-                     enclosing_offset))
-    
-            for child in cursor.get_children():
-                Indexer._update_db(
-                    path, child, connection, sql_cursor, enclosing_def_cursor)
-                
-        except InternalError:
-            raise
-        except Exception as e:
-            raise InternalError(path=path,
-                                cursor_spelling=cursor.spelling,
-                                cursor_location=cursor.location,
-                                cursor_kind=cursor.kind,
-                                exception=e)
+        if cursor.is_definition():
+            sql_cursor.execute(
+                'INSERT INTO defs VALUES (?, ?, ?)',
+                (cursor.get_usr(), path, cursor.location.offset))
+            if Indexer._is_enclosing_def(cursor):
+                enclosing_def_cursor = cursor
+        elif (cursor.referenced and 
+              cursor != cursor.referenced and 
+              cursor.location.file and
+              cursor.location.file.name == path):
+            
+            if enclosing_def_cursor:
+                enclosing_offset = enclosing_def_cursor.location.offset
+            else:
+                enclosing_offset = -1
+
+            sql_cursor.execute(
+                'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
+                (cursor.referenced.get_usr(),
+                 path,
+                 cursor.location.offset,
+                 enclosing_offset))
+            
+        if Indexer._is_base_specifier(cursor):
+            sql_cursor.execute(
+                'INSERT INTO classes VALUES (?, ?, ?, ?)',
+                (enclosing_def_cursor.get_usr(), 
+                 cursor.referenced.get_usr(),
+                 path,
+                 cursor.referenced.location.file.name
+                 ))
+
+        for child in cursor.get_children():
+            Indexer._update_db(
+                path, child, connection, sql_cursor, enclosing_def_cursor)
 
     def _file_from_name(self, file_name):
         translation_unit = self._translation_units[file_name]
