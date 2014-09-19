@@ -517,6 +517,48 @@ class Indexer(object):
             sub_usrs = super_usrs
             
         return superclasses
+    
+    def get_subclasses(self, source_location):
+        translation_unit = self._translation_units[source_location.file.name]
+        cursor = cindex.Cursor.from_location(translation_unit, source_location)
+        cursor = cursor.referenced
+
+        subclasses = []
+        if not cursor:
+            return subclasses
+        
+        sql_cursor = self._connection.cursor()
+        super_usrs = [cursor.get_usr()]
+        while len(super_usrs) > 0:
+            sub_usrs = []
+            for super_usr in super_usrs:
+                sql_cursor.execute(
+                    'SELECT sub_usr FROM classes WHERE super_usr = ?', 
+                    (super_usr,))
+                sub_usrs.extend([
+                    result[0] for result in sql_cursor.fetchall()
+                ])
+                
+            for sub_usr in sub_usrs:
+                sql_cursor.execute(
+                    'SELECT path, offset FROM defs WHERE usr = ?',
+                    (sub_usr,))
+                result = sql_cursor.fetchone()
+
+                if result:
+                    path, offset = result
+                    sub_translation_unit = self._translation_units[path]
+                    sub_file = cindex.File.from_name(
+                        sub_translation_unit, path)
+                    sub_source_location = cindex.SourceLocation.from_offset(
+                        sub_translation_unit, sub_file, offset)
+                    sub_cursor = cindex.Cursor.from_location(
+                        sub_translation_unit, sub_source_location)
+                    subclasses.append(sub_cursor)
+                    
+            super_usrs = sub_usrs
+            
+        return subclasses
             
         
     def get_diagnostics(self, cindexer_file=None):

@@ -559,6 +559,69 @@ class ExpandSuperclassesCommand(sublime_plugin.TextCommand):
         self.view.window().show_quick_panel(superclass_strings, on_done, sublime.MONOSPACE_FONT, len(superclasses) - 1, on_highlight)
 
 
+class ExpandSubclassesCommand(sublime_plugin.TextCommand):
+
+    def is_enabled(self):
+        project_file = self.view.window().project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
+
+        return False
+
+    def run(self, edit):
+        if len(self.view.sel()) != 1:
+            sublime.error_message('The expand subclasses command requires a single selection')
+            return
+
+        indexer = indexers[os.path.dirname(self.view.window().project_file_name())]
+        offset = self.view.sel()[0].b 
+        cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
+        source_location = cindexer.SourceLocation.from_offset(indexer, cindexer_file, offset)
+        subclasses = indexer.get_subclasses(source_location)  
+
+        if len(subclasses) < 1:
+            sublime.status_message('No subclasses found in the index.')
+            return
+
+        subclass_strings = []
+        for cursor in subclasses:
+             subclass_string = ':'.join([
+                os.path.basename(cursor.location.file.name.decode('utf-8')),
+                str(cursor.location.line),
+                str(cursor.location.column),
+                cursor.displayname.decode('utf-8')
+                ])
+             subclass_strings.append(subclass_string)
+
+        # Capture window so it can be used in the callback
+        window = self.view.window()
+        initial_sel = self.view.sel()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(self.view)
+                self.view.sel().clear()
+                for region in initial_sel:
+                    self.view.sel().add(region)
+
+        def on_highlight(index):
+            sub_cursor = subclasses[index]
+            sub_location_string = ':'.join([
+                sub_cursor.location.file.name.decode('utf-8'),
+                str(sub_cursor.location.line),
+                str(sub_cursor.location.column)
+                ])
+            sub_view = window.open_file(sub_location_string, sublime.ENCODED_POSITION | sublime.TRANSIENT)
+            sub_view.sel().clear()
+            sub_view.sel().add(sub_view.word(sub_cursor.location.offset))  
+
+        self.view.window().show_quick_panel(subclass_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
+
+
 class ViewIssuesCommand(sublime_plugin.TextCommand):
 
     def is_enabled(self):
