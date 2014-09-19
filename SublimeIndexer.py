@@ -645,7 +645,7 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
         cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
         includes = indexer.get_includes(cindexer_file)
 
-        if len(includes) > 1:
+        if len(includes) < 1:
             sublime.status_message('No includes found.')
             return
 
@@ -691,7 +691,7 @@ class ListIncludersCommand(sublime_plugin.TextCommand):
         cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
         includers = indexer.get_includers(cindexer_file)
 
-        if len(includers) > 1:
+        if len(includers) < 1:
             sublime.status_message('No includers found in the index.')
             return
 
