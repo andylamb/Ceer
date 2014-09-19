@@ -213,7 +213,14 @@ class Indexer(object):
         if not os.path.isabs(path):
             path = os.path.join(self._project_path, path)
 
-        return path in self._translation_units.keys()
+        if path in self._translation_units.keys():
+            return True
+        
+        sql_cursor = self._connection.cursor()
+        sql_cursor.execute('SELECT COUNT(*) FROM includes WHERE include = ?', 
+                           (path,))
+        (count,) = sql_cursor.fetchone()
+        return count > 0
 
     class IndexerStatus(object):
 
@@ -298,6 +305,8 @@ class Indexer(object):
         sql_cursor.execute(
             '''CREATE TABLE classes(sub_usr TEXT, super_usr TEXT, 
                                     sub_path TEXT, super_path TEXT)''')
+        sql_cursor.execute(
+            'CREATE TABLE includes(source TEXT, include TEXT, depth INT)')
 
         index = cindex.Index.create()
         translation_units = cls._parse_project(
@@ -405,7 +414,7 @@ class Indexer(object):
         the reference, i.e. any offset between |func and func| is acceptable
         '''
 
-        translation_unit = self._translation_units[source_location.file.name]
+        translation_unit = self._translation_units[source_location.file._translation_unit_name]
         cursor = cindex.Cursor.from_location(
             translation_unit, source_location)
         def_cursor = cursor.referenced
@@ -444,7 +453,7 @@ class Indexer(object):
         the reference, i.e. any offset between |func and func| is acceptable
         '''
 
-        translation_unit = self._translation_units[source_location.file.name]
+        translation_unit = self._translation_units[source_location.file._translation_unit_name]
         cursor = cindex.Cursor.from_location(translation_unit, source_location)
         cursor = cursor.referenced
 
@@ -477,7 +486,7 @@ class Indexer(object):
         return result
     
     def get_superclasses(self, source_location):
-        translation_unit = self._translation_units[source_location.file.name]
+        translation_unit = self._translation_units[source_location.file._translation_unit_name]
         cursor = cindex.Cursor.from_location(translation_unit, source_location)
         cursor = cursor.referenced
 
@@ -519,7 +528,7 @@ class Indexer(object):
         return superclasses
     
     def get_subclasses(self, source_location):
-        translation_unit = self._translation_units[source_location.file.name]
+        translation_unit = self._translation_units[source_location.file._translation_unit_name]
         cursor = cindex.Cursor.from_location(translation_unit, source_location)
         cursor = cursor.referenced
 
@@ -561,7 +570,7 @@ class Indexer(object):
         return subclasses
         
     def get_includes(self, cindexer_file):
-        translation_unit = self._translation_units[cindexer_file.name]
+        translation_unit = self._translation_units[cindexer_file._translation_unit_name]
         return [include for include in translation_unit.get_includes()]
         
     def get_diagnostics(self, cindexer_file=None):
@@ -575,7 +584,9 @@ class Indexer(object):
         return all issues in the index.
         '''
         if cindexer_file:
-            translation_unit = self._translation_units[cindexer_file.name]
+            translation_unit = self._translation_units[
+                cindexer_file._translation_unit_name
+            ]
             return translation_unit.diagnostics
         else:
             result = []
@@ -602,7 +613,7 @@ class Indexer(object):
 
                 unsaved_files[i] = (name, value)
 
-        translation_unit = self._translation_units[source_location.file.name]
+        translation_unit = self._translation_units[source_location.file._translation_unit_name]
         return translation_unit.codeComplete(
             source_location.file.name,
             source_location.line,
@@ -672,7 +683,9 @@ class Indexer(object):
         '''
 
         path = cindexer_file.name
-        translation_unit = self._translation_units.get(path)
+        translation_unit = self._translation_units[
+            cindexer_file._translation_unit_name
+        ]
         sql_cursor = self._connection.cursor()
 
         if progress_callback:
@@ -898,33 +911,55 @@ class Indexer(object):
                  path,
                  cursor.location.offset,
                  enclosing_offset))
-        try:
-            if (Indexer._is_base_specifier(cursor) and 
-                cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
-                sql_cursor.execute(
-                    'INSERT INTO classes VALUES (?, ?, ?, ?)',
-                    (enclosing_def_cursor.get_usr(), 
-                     cursor.referenced.get_usr(),
-                     path,
-                     cursor.referenced.location.file.name
-                     ))
-        except Exception as e:
-            raise InternalError(cursor_spelling=cursor.spelling, cursor_kind=cursor.kind, cursor_location=cursor.location, cursor_referenced_spelling=cursor.referenced.spelling, cursor_referenced_kind=cursor.referenced.kind, e=e)
+            
+        if (Indexer._is_base_specifier(cursor) and 
+            cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
+            sql_cursor.execute(
+                'INSERT INTO classes VALUES (?, ?, ?, ?)',
+                (enclosing_def_cursor.get_usr(), 
+                 cursor.referenced.get_usr(),
+                 path,
+                 cursor.referenced.location.file.name
+                 ))
+            
+        if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
+            includes = cursor.translation_unit.get_includes()
+            for include in includes:
+                sql_cursor.execute('INSERT INTO includes VALUES (?, ?, ?)',
+                                   (include.source.name, 
+                                    include.include.name, 
+                                    include.depth))
 
         for child in cursor.get_children():
             Indexer._update_db(
                 path, child, connection, sql_cursor, enclosing_def_cursor)
 
     def _file_from_name(self, file_name):
-        translation_unit = self._translation_units[file_name]
-        return cindex.File.from_name(translation_unit, file_name)
+        translation_unit = self._translation_units.get(file_name)
+        
+        if not translation_unit:
+            sql_cursor = self._connection.cursor()
+            sql_cursor.execute('SELECT source FROM includes WHERE include = ?',
+                               (file_name,))
+            (source,) = sql_cursor.fetchone()
+            translation_unit = self._translation_units[source]
+        
+        cindex_file = cindex.File.from_name(translation_unit, file_name)
+        cindex_file._translation_unit_name = translation_unit.spelling
+        return cindex_file
 
     def _source_location_from_position(self, cindexer_file, line, column):
-        translation_unit = self._translation_units[cindexer_file.name]
-        return cindex.SourceLocation.from_position(
+        translation_unit_name = cindexer_file._translation_unit_name
+        translation_unit = self._translation_units[translation_unit_name]
+        source_location = cindex.SourceLocation.from_position(
             translation_unit, cindexer_file, line, column)
+        source_location.file._translation_unit_name = translation_unit_name
+        return source_location
 
     def _source_location_from_offset(self, cindexer_file, offset):
-        translation_unit = self._translation_units[cindexer_file.name]
-        return cindex.SourceLocation.from_offset(
+        translation_unit_name = cindexer_file._translation_unit_name
+        translation_unit = self._translation_units[translation_unit_name]
+        source_location = cindex.SourceLocation.from_offset(
             translation_unit, cindexer_file, offset)
+        source_location.file._translation_unit_name = translation_unit_name
+        return source_location
