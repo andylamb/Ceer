@@ -559,7 +559,10 @@ class Indexer(object):
             super_usrs = sub_usrs
             
         return subclasses
-            
+        
+    def get_includes(self, cindexer_file):
+        translation_unit = self._translation_units[cindexer_file.name]
+        return [include for include in translation_unit.get_includes()]
         
     def get_diagnostics(self, cindexer_file=None):
         '''
@@ -895,15 +898,18 @@ class Indexer(object):
                  path,
                  cursor.location.offset,
                  enclosing_offset))
-            
-        if Indexer._is_base_specifier(cursor):
-            sql_cursor.execute(
-                'INSERT INTO classes VALUES (?, ?, ?, ?)',
-                (enclosing_def_cursor.get_usr(), 
-                 cursor.referenced.get_usr(),
-                 path,
-                 cursor.referenced.location.file.name
-                 ))
+        try:
+            if (Indexer._is_base_specifier(cursor) and 
+                cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
+                sql_cursor.execute(
+                    'INSERT INTO classes VALUES (?, ?, ?, ?)',
+                    (enclosing_def_cursor.get_usr(), 
+                     cursor.referenced.get_usr(),
+                     path,
+                     cursor.referenced.location.file.name
+                     ))
+        except Exception as e:
+            raise InternalError(cursor_spelling=cursor.spelling, cursor_kind=cursor.kind, cursor_location=cursor.location, cursor_referenced_spelling=cursor.referenced.spelling, cursor_referenced_kind=cursor.referenced.kind, e=e)
 
         for child in cursor.get_children():
             Indexer._update_db(

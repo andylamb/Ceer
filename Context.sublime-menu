@@ -4,6 +4,8 @@
     {"caption": "List References", "command": "list_references"},
     {"caption": "Expand Superclasses", "command": "expand_superclasses"},
     {"caption": "Expand Subclasses", "command": "expand_subclasses"},
+    {"caption": "Expand Includes", "command": "expand_includes"},
+    {"caption": "List Includers", "command": "list_includers"},
     {"caption": "View Issues In File", "command": "view_issues"}
     // {"caption": "Show Inheritance Diagram", "command": "show_inheritance_diagram"}
 ]

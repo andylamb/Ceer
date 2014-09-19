@@ -622,6 +622,49 @@ class ExpandSubclassesCommand(sublime_plugin.TextCommand):
         self.view.window().show_quick_panel(subclass_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
 
 
+class ExpandIncludesCommand(sublime_plugin.TextCommand):
+
+    def is_enabled(self):
+        project_file = self.view.window().project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
+
+        return False
+
+    def run(self, edit):
+        if len(self.view.sel()) != 1:
+            sublime.error_message('The expand subclasses command requires a single selection')
+            return
+
+        indexer = indexers[os.path.dirname(self.view.window().project_file_name())]
+        cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
+        includes = indexer.get_includes(cindexer_file)
+
+        include_strings = []
+        for include in includes:
+            if not include.is_input_file:
+                include_string = (' ' * (include.depth - 1)) + include.include.name.decode('utf-8')
+                include_strings.append(include_string)
+
+        # Capture window so it can be used in the callback
+        window = self.view.window()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(self.view)
+
+        def on_highlight(index):
+            include = includes[index]
+            include_view = window.open_file(include.include.name.decode('utf-8'), sublime.TRANSIENT)
+
+        self.view.window().show_quick_panel(include_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
+
+
+
 class ViewIssuesCommand(sublime_plugin.TextCommand):
 
     def is_enabled(self):
