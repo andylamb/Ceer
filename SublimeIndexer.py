@@ -637,12 +637,16 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
 
     def run(self, edit):
         if len(self.view.sel()) != 1:
-            sublime.error_message('The expand subclasses command requires a single selection')
+            sublime.error_message('The expand includes command requires a single selection')
             return
 
         indexer = indexers[os.path.dirname(self.view.window().project_file_name())]
         cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
         includes = indexer.get_includes(cindexer_file)
+
+        if len(includes) > 1:
+            sublime.status_message('No includes found.')
+            return
 
         include_strings = []
         for include in includes:
@@ -663,6 +667,50 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
 
         self.view.window().show_quick_panel(include_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
 
+
+class ListIncludersCommand(sublime_plugin.TextCommand):
+
+    def is_enabled(self):
+        project_file = self.view.window().project_file_name()
+
+        if project_file:
+            project_path = os.path.dirname(project_file)
+            indexer = indexers.get(project_path)
+            if indexer:
+                return indexer.indexed(self.view.file_name())
+
+        return False
+
+    def run(self, edit):
+        if len(self.view.sel()) != 1:
+            sublime.error_message('The list includers command requires a single selection')
+            return
+
+        indexer = indexers[os.path.dirname(self.view.window().project_file_name())]
+        cindexer_file = cindexer.File.from_name(indexer, self.view.file_name()) 
+        includers = indexer.get_includers(cindexer_file)
+
+        if len(includers) > 1:
+            sublime.status_message('No includers found in the index.')
+            return
+
+        includer_strings = []
+        for source, depth in includers:
+            includer_string = (' ' * (depth - 1)) + source
+            includer_strings.append(includer_string)
+
+        # Capture window so it can be used in the callback
+        window = self.view.window()
+
+        def on_done(index):
+            if index == -1:
+                window.focus_view(self.view)
+
+        def on_highlight(index):
+            source, unused = includers[index]
+            include_view = window.open_file(source, sublime.TRANSIENT)
+
+        self.view.window().show_quick_panel(includer_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)  
 
 
 class ViewIssuesCommand(sublime_plugin.TextCommand):
