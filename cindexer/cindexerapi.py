@@ -570,8 +570,19 @@ class Indexer(object):
         return subclasses
         
     def get_includes(self, cindexer_file):
-        translation_unit = self._translation_units[cindexer_file._translation_unit_name]
-        return [include for include in translation_unit.get_includes()]
+        sql_cursor = self._connection.cursor()
+        return Indexer._get_includes(cindexer_file.name, sql_cursor)
+
+    @staticmethod
+    def _get_includes(source, sql_cursor):
+        result = []
+        sql_cursor.execute('SELECT include, depth FROM includes WHERE source = ?',
+                           (source,))
+        for include, depth in sql_cursor.fetchall():
+            result.append((include.decode('utf-8'), depth))
+            result.extend(Indexer._get_includes(include, sql_cursor))
+            
+        return result
     
     def get_includers(self, cindexer_file):
         sql_cursor = self._connection.cursor()

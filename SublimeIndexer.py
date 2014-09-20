@@ -649,10 +649,9 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
             return
 
         include_strings = []
-        for include in includes:
-            if not include.is_input_file:
-                include_string = (' ' * (include.depth - 1)) + include.include.name.decode('utf-8')
-                include_strings.append(include_string)
+        for include, depth in includes:
+            include_string = (' ' * (depth - 1)) + include
+            include_strings.append(include_string)
 
         # Capture window so it can be used in the callback
         window = self.view.window()
@@ -662,8 +661,8 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
                 window.focus_view(self.view)
 
         def on_highlight(index):
-            include = includes[index]
-            include_view = window.open_file(include.include.name.decode('utf-8'), sublime.TRANSIENT)
+            include, unused = includes[index]
+            include_view = window.open_file(include, sublime.TRANSIENT)
 
         self.view.window().show_quick_panel(include_strings, on_done, sublime.MONOSPACE_FONT, on_highlight=on_highlight)
 
