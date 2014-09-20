@@ -356,7 +356,7 @@ class Indexer(object):
         clean_persistent.
 
         Parameters:
-        project_path -- an absolute or relative path to the project, as bytes
+        project_path -- an absolute path to the project, as bytes
         or str
 
         folders -- an optional array of dictionaries. Each dictionary must
