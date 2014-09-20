@@ -587,17 +587,18 @@ class Indexer(object):
     
     def get_includers(self, cindexer_file):
         sql_cursor = self._connection.cursor()
-        return Indexer._get_includers(cindexer_file.name, sql_cursor)
+        return Indexer._get_includers(cindexer_file.name, sql_cursor, 1)
     
     @staticmethod
-    def _get_includers(include, sql_cursor):
+    def _get_includers(include, sql_cursor, depth):
         result = []
         sql_cursor.execute(
-            'SELECT source, depth FROM includes WHERE include = ?',
+            'SELECT source FROM includes WHERE include = ?',
             (include,))
-        for source, depth in sql_cursor.fetchall():
+        for (source,) in sql_cursor.fetchall():
             result.append((source.decode('utf-8'), depth))
-            result.extend(Indexer._get_includers(source, sql_cursor))
+            result.extend(Indexer._get_includers(source, sql_cursor, 
+                                                 depth + 1))
             
         return result
         
@@ -966,12 +967,13 @@ class Indexer(object):
     def _file_from_name(self, file_name):
         translation_unit = self._translation_units.get(file_name)
         
-        if not translation_unit:
+        source = file_name
+        while not translation_unit:
             sql_cursor = self._connection.cursor()
             sql_cursor.execute('SELECT source FROM includes WHERE include = ?',
-                               (file_name,))
+                               (source,))
             (source,) = sql_cursor.fetchone()
-            translation_unit = self._translation_units[source]
+            translation_unit = self._translation_units.get(source)
         
         cindex_file = cindex.File.from_name(translation_unit, file_name)
         cindex_file._translation_unit_name = translation_unit.spelling
