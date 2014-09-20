@@ -576,8 +576,9 @@ class Indexer(object):
     @staticmethod
     def _get_includes(source, sql_cursor):
         result = []
-        sql_cursor.execute('SELECT include, depth FROM includes WHERE source = ?',
-                           (source,))
+        sql_cursor.execute(
+            'SELECT include, depth FROM includes WHERE source = ?',
+            (source,))
         for include, depth in sql_cursor.fetchall():
             result.append((include.decode('utf-8'), depth))
             result.extend(Indexer._get_includes(include, sql_cursor))
@@ -586,13 +587,18 @@ class Indexer(object):
     
     def get_includers(self, cindexer_file):
         sql_cursor = self._connection.cursor()
+        return Indexer._get_includers(cindexer_file.name, sql_cursor)
+    
+    @staticmethod
+    def _get_includers(include, sql_cursor):
+        result = []
         sql_cursor.execute(
             'SELECT source, depth FROM includes WHERE include = ?',
-            (cindexer_file.name,))
-        result = [
-            (source.decode('utf-8'), depth) 
-            for source, depth in sql_cursor.fetchall()
-        ]
+            (include,))
+        for source, depth in sql_cursor.fetchall():
+            result.append((source.decode('utf-8'), depth))
+            result.extend(Indexer._get_includers(source, sql_cursor))
+            
         return result
         
     def get_diagnostics(self, cindexer_file=None):
