@@ -1035,6 +1035,9 @@ class Indexer(object):
             out_path = os.path.join(project_path, 'compile_commands.json')
             if not os.path.isabs(makefile_path):
                 makefile_path = os.path.join(project_path, makefile_path)
+
+            subprocess.call(['make', 'clean'], cwd=makefile_path)
+
             subprocess.call(
                 [os.path.join(_BIN_PATH, 'bear'),
                  '-o', out_path,
