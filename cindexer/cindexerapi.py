@@ -680,10 +680,10 @@ class Indexer(object):
         # get_includes() because this may be called on a file that was not
         # actually parsed (e.g. a header file).
         return Indexer._get_includes(cindexer_file._translation_unit_name,
-                                     cindexer_file.name, sql_cursor)
+                                     cindexer_file.name, sql_cursor, [])
 
     @staticmethod
-    def _get_includes(translation_unit_name, source, sql_cursor):
+    def _get_includes(translation_unit_name, source, sql_cursor, visited):
         '''
         Return an array of tuples containing the path to the include and the
         depth of the include.
@@ -696,7 +696,9 @@ class Indexer(object):
         source - The path to the source file whose includes we are finding.
         sql_cursor - A cursor for the index file.
         '''
-        # Do a recursive DFS for includes.
+        # Do a recursive DFS for includes, using the visited list to prevent
+        # infinite recursion on circular includes.
+        visited.append(source)
         result = []
         sql_cursor.execute(
             '''
@@ -706,8 +708,10 @@ class Indexer(object):
             (translation_unit_name, source))
         for include, depth in sql_cursor.fetchall():
             result.append((include.decode('utf-8'), depth))
-            result.extend(Indexer._get_includes(translation_unit_name,
-                                                include, sql_cursor))
+            if include not in visited:
+                result.extend(Indexer._get_includes(translation_unit_name,
+                                                    include, sql_cursor,
+                                                    visited))
 
         return result
 
@@ -726,11 +730,10 @@ class Indexer(object):
         '''
         sql_cursor = self._connection.cursor()
         # Call the recursive private method.
-        return Indexer._get_includers(cindexer_file._translation_unit_name,
-                                      cindexer_file.name, sql_cursor, 1)
+        return Indexer._get_includers(cindexer_file.name, sql_cursor, 1, [])
 
     @staticmethod
-    def _get_includers(translation_unit_name, include, sql_cursor, depth):
+    def _get_includers(include, sql_cursor, depth, visited):
         '''
         Return an array of tuples containing the path to the source and the
         depth of the source.
@@ -738,22 +741,26 @@ class Indexer(object):
         Performs the actual search for includers.
 
         Parameters:
-        translation_unit_name - The name of the translation unit that parsed
-        the include.
         include - The path to the included file whose sources we are finding.
         sql_cursor - A cursor for the index file.
+        depth - The depth of the include, should be 1 for the top-level call.
+        visited - An list of visited includes, should be empty for the
+        top-level call.
         '''
-        # Do a recursive DFS for includers.
+        # Do a recursive DFS for includers, using the visited list to prevent
+        # infinite recursion on circular includes.
+        visited.append(include)
         result = []
         sql_cursor.execute(
             '''
             SELECT source FROM includes
-            WHERE translation_unit = ? AND include = ?''',
+            WHERE include = ?''',
             (include,))
         for (source,) in sql_cursor.fetchall():
             result.append((source.decode('utf-8'), depth))
-            result.extend(Indexer._get_includers(translation_unit_name, source,
-                                                 sql_cursor, depth + 1))
+            if source not in visited:
+                result.extend(Indexer._get_includers(source, sql_cursor,
+                                                     depth + 1, visited))
 
         return result
 
