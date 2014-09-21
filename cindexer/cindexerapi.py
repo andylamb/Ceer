@@ -314,7 +314,7 @@ class Indexer(object):
             '''CREATE TABLE classes(sub_usr TEXT, super_usr TEXT,
                                     sub_path TEXT, super_path TEXT)''')
         sql_cursor.execute(
-            '''CREATE UNIQUE INDEX sub_usr_super_usr_idx 
+            '''CREATE UNIQUE INDEX sub_usr_super_usr_idx
                ON classes(sub_usr, super_usr)''')
         sql_cursor.execute(
             '''CREATE TABLE includes(translation_unit TEXT, source TEXT,
@@ -501,10 +501,12 @@ class Indexer(object):
 
         for path, offset, enclosing_offset in sql_cursor.fetchall():
             # Create a cursor from the reference to return to the client.
-            ref_translation_unit = self._translation_units[path]
-            ref_file = cindex.File.from_name(ref_translation_unit, path)
-            ref_source_location = cindex.SourceLocation.from_offset(
-                ref_translation_unit, ref_file, offset)
+            ref_file = File.from_name(self, path)
+            ref_source_location = SourceLocation.from_offset(
+                self, ref_file, offset)
+            ref_translation_unit = self._translation_units[
+                ref_file._translation_unit_name
+            ]
             ref_cursor = cindex.Cursor.from_location(
                 ref_translation_unit, ref_source_location)
 
@@ -1216,8 +1218,8 @@ class Indexer(object):
         if cursor.is_definition():
             sql_cursor.execute(
                 'INSERT OR IGNORE INTO defs VALUES (?, ?, ?)',
-                (cursor.get_usr(), 
-                 cursor.location.file.name, 
+                (cursor.get_usr(),
+                 cursor.location.file.name,
                  cursor.location.offset))
         if Indexer._is_enclosing_def(cursor):
             enclosing_def_cursor = cursor
@@ -1226,8 +1228,9 @@ class Indexer(object):
         # cursor, and is in the file we are indexing.
         #
         # TODO: does this handle headers correctly?
-        if (cursor.referenced and cursor != cursor.referenced and
-            cursor.location.file and cursor.location.file.name == path):
+        if (cursor.referenced and
+            cursor != cursor.referenced and
+            cursor.location.file):
 
             # If an enclosing definition cursor has been set, store its
             # location, otherwise store -1 to signal there is none.
@@ -1239,7 +1242,7 @@ class Indexer(object):
             sql_cursor.execute(
                 'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
                 (cursor.referenced.get_usr(),
-                 path,
+                 cursor.location.file.name,
                  cursor.location.offset,
                  enclosing_offset))
 
