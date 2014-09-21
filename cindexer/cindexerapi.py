@@ -577,11 +577,12 @@ class Indexer(object):
 
                 if result:
                     path, offset = result
-                    super_translation_unit = self._translation_units[path]
-                    super_file = cindex.File.from_name(
-                        super_translation_unit, path)
-                    super_source_location = cindex.SourceLocation.from_offset(
-                        super_translation_unit, super_file, offset)
+                    super_file = File.from_name(self, path)
+                    super_source_location = SourceLocation.from_offset(
+                        self, super_file, offset)
+                    super_translation_unit = self._translation_units[
+                        super_file._translation_unit_name
+                    ]
                     super_cursor = cindex.Cursor.from_location(
                         super_translation_unit, super_source_location)
                     superclasses.append(super_cursor)
@@ -648,11 +649,12 @@ class Indexer(object):
 
                 if result:
                     path, offset = result
-                    sub_translation_unit = self._translation_units[path]
-                    sub_file = cindex.File.from_name(
-                        sub_translation_unit, path)
-                    sub_source_location = cindex.SourceLocation.from_offset(
-                        sub_translation_unit, sub_file, offset)
+                    sub_file = File.from_name(self, path)
+                    sub_source_location = SourceLocation.from_offset(
+                        self, sub_file, offset)
+                    sub_translation_unit = self._translation_units[
+                        sub_file._translation_unit_name
+                    ]
                     sub_cursor = cindex.Cursor.from_location(
                         sub_translation_unit, sub_source_location)
                     subclasses.append(sub_cursor)
