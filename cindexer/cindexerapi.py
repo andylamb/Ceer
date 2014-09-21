@@ -564,7 +564,7 @@ class Indexer(object):
                     'SELECT super_usr FROM classes WHERE sub_usr = ?',
                     (sub_usr,))
                 super_usrs.extend([
-                    (result,) for result in sql_cursor.fetchall()
+                    result[0] for result in sql_cursor.fetchall()
                 ])
 
             # Now, we look up the location of the definition of the
