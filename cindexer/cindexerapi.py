@@ -314,7 +314,10 @@ class Indexer(object):
             '''CREATE TABLE classes(sub_usr TEXT, super_usr TEXT,
                                     sub_path TEXT, super_path TEXT)''')
         sql_cursor.execute(
-            'CREATE TABLE includes(source TEXT, include TEXT, depth INT)')
+            '''CREATE TABLE includes(translation_unit TEXT, source TEXT,
+                                     include TEXT, depth INT)''')
+        sql_cursor.execute(
+            'CREATE INDEX tu_source_idx ON includes(translation_unit, source)')
 
         index = cindex.Index.create()
         translation_units = cls._parse_project(
@@ -676,10 +679,11 @@ class Indexer(object):
         # instead of looking up the TranslationUnit instance and calling
         # get_includes() because this may be called on a file that was not
         # actually parsed (e.g. a header file).
-        return Indexer._get_includes(cindexer_file.name, sql_cursor)
+        return Indexer._get_includes(cindexer_file._translation_unit_name,
+                                     cindexer_file.name, sql_cursor)
 
     @staticmethod
-    def _get_includes(source, sql_cursor):
+    def _get_includes(translation_unit_name, source, sql_cursor):
         '''
         Return an array of tuples containing the path to the include and the
         depth of the include.
@@ -687,17 +691,23 @@ class Indexer(object):
         Performs the actual search for includes.
 
         Parameters:
+        translation_unit_name - The name of the translation unit that parsed
+        the include.
         source - The path to the source file whose includes we are finding.
         sql_cursor - A cursor for the index file.
         '''
         # Do a recursive DFS for includes.
         result = []
         sql_cursor.execute(
-            'SELECT include, depth FROM includes WHERE source = ?',
-            (source,))
+            '''
+            SELECT include, depth FROM includes
+            WHERE translation_unit = ? AND source = ?
+            ''',
+            (translation_unit_name, source))
         for include, depth in sql_cursor.fetchall():
             result.append((include.decode('utf-8'), depth))
-            result.extend(Indexer._get_includes(include, sql_cursor))
+            result.extend(Indexer._get_includes(translation_unit_name,
+                                                include, sql_cursor))
 
         return result
 
@@ -716,10 +726,11 @@ class Indexer(object):
         '''
         sql_cursor = self._connection.cursor()
         # Call the recursive private method.
-        return Indexer._get_includers(cindexer_file.name, sql_cursor, 1)
+        return Indexer._get_includers(cindexer_file._translation_unit_name,
+                                      cindexer_file.name, sql_cursor, 1)
 
     @staticmethod
-    def _get_includers(include, sql_cursor, depth):
+    def _get_includers(translation_unit_name, include, sql_cursor, depth):
         '''
         Return an array of tuples containing the path to the source and the
         depth of the source.
@@ -727,18 +738,22 @@ class Indexer(object):
         Performs the actual search for includers.
 
         Parameters:
+        translation_unit_name - The name of the translation unit that parsed
+        the include.
         include - The path to the included file whose sources we are finding.
         sql_cursor - A cursor for the index file.
         '''
         # Do a recursive DFS for includers.
         result = []
         sql_cursor.execute(
-            'SELECT source FROM includes WHERE include = ?',
+            '''
+            SELECT source FROM includes
+            WHERE translation_unit = ? AND include = ?''',
             (include,))
         for (source,) in sql_cursor.fetchall():
             result.append((source.decode('utf-8'), depth))
-            result.extend(Indexer._get_includers(source, sql_cursor,
-                                                 depth + 1))
+            result.extend(Indexer._get_includers(translation_unit_name, source,
+                                                 sql_cursor, depth + 1))
 
         return result
 
@@ -882,8 +897,8 @@ class Indexer(object):
             'DELETE FROM classes WHERE sub_path = ? or super_path = ?',
             (path, path))
         sql_cursor.execute(
-            'DELETE FROM includes WHERE include = ? or source = ?',
-            (path, path))
+            'DELETE FROM includes WHERE translation_unit = ?',
+            (path,))
 
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
@@ -1094,8 +1109,8 @@ class Indexer(object):
                     for file_name in files:
                         # The fnmatch.fnmatch function uses wildcards.
                         if (cls._indexable(file_name) and
-                            not any([fnmatch(file_name, pattern) 
-                                     for pattern in file_exclude_patterns])):
+                            not any([fnmatch(file_name, pattern) \
+                            for pattern in file_exclude_patterns])):
 
                             abs_path = os.path.abspath(os.path.join(path,
                                                                     file_name))
@@ -1197,10 +1212,8 @@ class Indexer(object):
         # cursor, and is in the file we are indexing.
         #
         # TODO: does this handle headers correctly?
-        if (cursor.referenced and
-            cursor != cursor.referenced and
-            cursor.location.file and
-            cursor.location.file.name == path):
+        if (cursor.referenced and cursor != cursor.referenced and
+            cursor.location.file and cursor.location.file.name == path):
 
             # If an enclosing definition cursor has been set, store its
             # location, otherwise store -1 to signal there is none.
@@ -1232,8 +1245,9 @@ class Indexer(object):
         if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
             includes = cursor.translation_unit.get_includes()
             for include in includes:
-                sql_cursor.execute('INSERT INTO includes VALUES (?, ?, ?)',
-                                   (include.source.name,
+                sql_cursor.execute('INSERT INTO includes VALUES (?, ?, ?, ?)',
+                                   (path,
+                                    include.source.name,
                                     include.include.name,
                                     include.depth))
 
