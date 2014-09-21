@@ -1100,15 +1100,10 @@ class Indexer(object):
                             abs_path = os.path.abspath(os.path.join(path,
                                                                     file_name))
                             abs_path = bytes(abs_path, 'utf-8')
-                            # Start a new thread to actually parse and index
-                            # the file. We add all threads to a list so we can
-                            # join them at some point.
-                            indexer_thread = threading.Thread(
-                                target=cls._parse_wrapper,
-                                args=(translation_units, index, abs_path,
-                                      progress_callback, compilation_database))
-                            indexer_thread.start()
-                            started_threads.append(indexer_thread)
+
+                            Indexer._parse_wrapper(
+                                translation_units, index, abs_path,
+                                progress_callback, compilation_database)
 
                     # Check if any subdirectories should be excluded.
                     for subdir in subdirs:
@@ -1128,16 +1123,9 @@ class Indexer(object):
                         abs_path = os.path.abspath(os.path.join(path,
                                                                 file_name))
                         abs_path = bytes(abs_path, 'utf-8')
-                        indexer_thread = threading.Thread(
-                            target=cls._parse_wrapper,
-                            args=(translation_units, index, abs_path,
-                                  progress_callback, compilation_database))
-                        indexer_thread.start()
-                        started_threads.append(indexer_thread)
-
-        # Join all the threads that are working.
-        for thread in started_threads:
-            thread.join()
+                        Indexer._parse_wrapper(
+                            translation_units, index, abs_path,
+                            progress_callback, compilation_database)
 
         return translation_units
 
