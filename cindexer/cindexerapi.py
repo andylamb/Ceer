@@ -314,6 +314,9 @@ class Indexer(object):
             '''CREATE TABLE classes(sub_usr TEXT, super_usr TEXT,
                                     sub_path TEXT, super_path TEXT)''')
         sql_cursor.execute(
+            '''CREATE UNIQUE INDEX sub_usr_super_usr_idx 
+               ON classes(sub_usr, super_usr)''')
+        sql_cursor.execute(
             '''CREATE TABLE includes(translation_unit TEXT, source TEXT,
                                      include TEXT, depth INT)''')
         sql_cursor.execute(
@@ -1246,7 +1249,7 @@ class Indexer(object):
         if (cursor.kind == cindex.CursorKind.CXX_BASE_SPECIFIER and
             cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
             sql_cursor.execute(
-                'INSERT INTO classes VALUES (?, ?, ?, ?)',
+                'INSERT OR IGNORE INTO classes VALUES (?, ?, ?, ?)',
                 (enclosing_def_cursor.get_usr(),
                  cursor.referenced.get_usr(),
                  path,
