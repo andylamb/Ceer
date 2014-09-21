@@ -302,7 +302,7 @@ class Indexer(object):
         connection = sqlite3.connect(index_db_path, check_same_thread=False)
         sql_cursor = connection.cursor()
         sql_cursor.execute(
-            'CREATE TABLE defs(usr TEXT, path TEXT, offset INT)')
+            'CREATE TABLE defs(usr TEXT PRIMARY KEY, path TEXT, offset INT)')
 
         sql_cursor.execute(
             '''CREATE TABLE refs(usr TEXT, path TEXT,
@@ -1210,8 +1210,10 @@ class Indexer(object):
         # should be set as an enclosing definition.
         if cursor.is_definition():
             sql_cursor.execute(
-                'INSERT INTO defs VALUES (?, ?, ?)',
-                (cursor.get_usr(), path, cursor.location.offset))
+                'INSERT OR IGNORE INTO defs VALUES (?, ?, ?)',
+                (cursor.get_usr(), 
+                 cursor.location.file.name, 
+                 cursor.location.offset))
         if Indexer._is_enclosing_def(cursor):
             enclosing_def_cursor = cursor
 
