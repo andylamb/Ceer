@@ -950,7 +950,7 @@ class Indexer(object):
         '''
         if type(file_name) is bytes:
             file_name = file_name.decode('utf-8')
-        exts = ['.c', '.cpp']
+        exts = ['.c', '.cpp', '.cc']
         return any(file_name.endswith(ext) for ext in exts)
 
     @classmethod
