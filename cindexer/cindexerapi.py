@@ -329,18 +329,17 @@ class Indexer(object):
             index, project_path, folders,
             progress_callback, cmakelists_path, makefile_path)
 
-        for i, (path, translation_unit) in \
-                enumerate(translation_units.items()):
+        for i, translation_unit in \
+                enumerate(translation_units.values()):
 
             if progress_callback:
                 progress_callback(
                     cls.IndexerStatus.STARTING_INDEXING,
-                    path=path.decode('utf-8'),
+                    path=translation_unit.spelling.decode('utf-8'),
                     indexed=i,
                     total=len(translation_units))
 
-            cls._update_db(
-                path, translation_unit.cursor, connection, sql_cursor)
+            cls._update_db(translation_unit.cursor, connection, sql_cursor)
 
         connection.commit()
 
@@ -857,17 +856,17 @@ class Indexer(object):
                               path=path.decode('utf_8'),
                               indexed=0,
                               total=1)
-
-        # Update the index file.
-        Indexer._update_db(
-            path, translation_unit.cursor,
-            self._connection, self._connection.cursor())
-
-        self._connection.commit()
-
-        if progress_callback:
-            progress_callback(self.IndexerStatus.COMPLETED,
-                              project_path=self._project_path)
+        
+            # Update the index file.
+            Indexer._update_db(
+                translation_unit.cursor, self._connection, 
+                self._connection.cursor(), path=path)
+        
+            self._connection.commit()
+        
+            if progress_callback:
+                progress_callback(self.IndexerStatus.COMPLETED,
+                                  project_path=self._project_path)
 
         return self._file_from_name(path)
 
@@ -920,9 +919,8 @@ class Indexer(object):
                               total=1)
 
         # Insert the updated information.
-        Indexer._update_db(
-            path, translation_unit.cursor,
-            self._connection, self._connection.cursor())
+        Indexer._update_db(translation_unit.cursor, self._connection, 
+                           self._connection.cursor(), path=path)
 
         self._connection.commit()
 
@@ -1185,7 +1183,8 @@ class Indexer(object):
 
     @staticmethod
     def _update_db(path, cursor, connection,
-                   sql_cursor, enclosing_def_cursor=None):
+    def _update_db(cursor, connection, sql_cursor, enclosing_def_cursor=None, 
+                   path=None):
         '''
         Update the database with a parsed translation unit.
 
@@ -1204,16 +1203,21 @@ class Indexer(object):
         defined by _is_enclosing_def). The top level call to _update_db not
         pass in an argument.
         '''
-        # If the cursor is a definition, update the defs table, and check if it
-        # should be set as an enclosing definition.
-        if cursor.is_definition():
-            sql_cursor.execute(
-                'INSERT OR IGNORE INTO defs VALUES (?, ?, ?)',
-                (cursor.get_usr(),
-                 cursor.location.file.name,
-                 cursor.location.offset))
-        if Indexer._is_enclosing_def(cursor):
-            enclosing_def_cursor = cursor
+
+        if (not path or 
+            path == cursor.spelling or 
+            (cursor.location.file and path == cursor.location.file.name)):
+
+            # If the cursor is a definition, update the defs table, and check 
+            # if it should be set as an enclosing definition.
+            if cursor.is_definition():
+                sql_cursor.execute(
+                    'INSERT OR IGNORE INTO defs VALUES (?, ?, ?)',
+                    (cursor.get_usr(),
+                     cursor.location.file.name,
+                     cursor.location.offset))
+            if Indexer._is_enclosing_def(cursor):
+                enclosing_def_cursor = cursor
 
         # To insert into refs, check that the cursor is referencing a different
         # cursor, and is in the file we are indexing.
@@ -1261,8 +1265,8 @@ class Indexer(object):
 
         # Recursively index all the children.
         for child in cursor.get_children():
-            Indexer._update_db(
-                path, child, connection, sql_cursor, enclosing_def_cursor)
+            Indexer._update_db(child, connection, sql_cursor, 
+                               enclosing_def_cursor, path)
 
     def _file_from_name(self, file_name):
         '''
