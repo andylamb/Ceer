@@ -319,10 +319,10 @@ class Indexer(object):
             '''CREATE UNIQUE INDEX sub_usr_super_usr_idx
                ON classes(sub_usr, super_usr)''')
         sql_cursor.execute(
-            '''CREATE TABLE includes(translation_unit TEXT, source TEXT,
-                                     include TEXT, depth INT)''')
+            'CREATE TABLE includes(source TEXT, include TEXT, depth INT)')
         sql_cursor.execute(
-            'CREATE INDEX tu_source_idx ON includes(translation_unit, source)')
+            '''CREATE UNIQUE INDEX source_include_idx 
+               ON includes(source, include)''')
 
         index = cindex.Index.create()
         translation_units = cls._parse_project(
@@ -711,10 +711,9 @@ class Indexer(object):
         result = []
         sql_cursor.execute(
             '''
-            SELECT include, depth FROM includes
-            WHERE translation_unit = ? AND source = ?
+            SELECT include, depth FROM includes WHERE source = ?
             ''',
-            (translation_unit_name, source))
+            (source,))
         for include, depth in sql_cursor.fetchall():
             result.append((include.decode('utf-8'), depth))
             if include not in visited:
@@ -912,9 +911,7 @@ class Indexer(object):
         sql_cursor.execute(
             'DELETE FROM classes WHERE sub_path = ? or super_path = ?',
             (path, path))
-        sql_cursor.execute(
-            'DELETE FROM includes WHERE translation_unit = ?',
-            (path,))
+        sql_cursor.execute('DELETE FROM includes WHERE source = ?', (path,))
 
         if progress_callback:
             progress_callback(self.IndexerStatus.STARTING_INDEXING,
@@ -926,14 +923,6 @@ class Indexer(object):
         Indexer._update_db(
             path, translation_unit.cursor,
             self._connection, self._connection.cursor())
-
-        # Update any files that are including this file.
-        # TODO: Fix the progress callback, and check for circular inclusion.
-        sql_cursor.execute('SELECT source FROM includes WHERE include = ?',
-                           (path,))
-        for (source,) in sql_cursor.fetchall():
-            includer_file = File.from_name(self, source)
-            self.update_file(includer_file, progress_callback)
 
         self._connection.commit()
 
@@ -1260,15 +1249,15 @@ class Indexer(object):
                  path,
                  cursor.referenced.location.file.name))
 
-        # We only want to update includes once per translation unit.
-        if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
-            includes = cursor.translation_unit.get_includes()
-            for include in includes:
-                sql_cursor.execute('INSERT INTO includes VALUES (?, ?, ?, ?)',
-                                   (path,
-                                    include.source.name,
-                                    include.include.name,
-                                    include.depth))
+            # We only want to update includes once per translation unit.
+            if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
+                includes = cursor.translation_unit.get_includes()
+                for include in includes:
+                    sql_cursor.execute(
+                        'INSERT OR IGNORE INTO includes VALUES (?, ?, ?)',
+                        (include.source.name,
+                         include.include.name,
+                         include.depth))
 
         # Recursively index all the children.
         for child in cursor.get_children():
