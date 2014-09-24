@@ -46,10 +46,10 @@ import sublime_plugin
 
 # The plugin is not in the path by default, so we need to make sure it is in
 # order to import the cindexer package.
-SUBLIME_INDEXER_PATH = os.path.dirname(os.path.abspath(__file__))
+CEER_PATH = os.path.dirname(os.path.abspath(__file__))
 
-if SUBLIME_INDEXER_PATH not in sys.path:
-    sys.path.append(SUBLIME_INDEXER_PATH)
+if CEER_PATH not in sys.path:
+    sys.path.append(CEER_PATH)
 
 import cindexer
 
@@ -398,7 +398,7 @@ def plugin_loaded():
                 indexer_thread.start()
 
 
-class SublimeIndexerListener(sublime_plugin.EventListener):
+class CeerListener(sublime_plugin.EventListener):
 
     '''
     Events:
@@ -563,13 +563,13 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
         # We require a project file so we know at a minimum where the index
         # should be rooted, and optionally for other configuration settings.
         if project_file is None:
-            sublime.error_message('SublimeIndexer requries a .sublime-project file to know which files to add to the index. To create a .sublime-project file, go to Project > Save Project As...')
+            sublime.error_message('Ceer requries a .sublime-project file to know which files to add to the index. To create a .sublime-project file, go to Project > Save Project As...')
             return
 
         project_path = os.path.dirname(project_file)
         project_data = self.window.project_data()
 
-        indexer_data = project_data.get('sublime_indexer')
+        indexer_data = project_data.get('ceer')
         cmakelists_path = None
         makefile_path = None
         if indexer_data:
@@ -580,10 +580,10 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
         # want to, and setup the .sublime-project to do so. These can be used
         # to build a compilation database.
         if not indexer_data or not (makefile_path or cmakelists_path):
-            if sublime.ok_cancel_dialog('SublimeIndexer can use either a CMakeLists.txt or Makefile to generate a more accurate index by using the exact commands used to compile to project. To enable this feature, in the .sublime-project file, under the \"sublime_indexer\" section, set either \"cmakelists_path\" or \"makefile_path\". If you would like to stop building the index, to edit the .sublime-project file, click \"OK\". To continue building the index, click \"Cancel\"'):
+            if sublime.ok_cancel_dialog('Ceer can use either a CMakeLists.txt or Makefile to generate a more accurate index by using the exact commands used to compile to project. To enable this feature, in the .sublime-project file, under the \"ceer\" section, set either \"cmakelists_path\" or \"makefile_path\". If you would like to stop building the index, to edit the .sublime-project file, click \"OK\". To continue building the index, click \"Cancel\"'):
                 if not indexer_data:
                     indexer_data = {"cmakelists_path": "", "makefile_path": ""}
-                    project_data['sublime_indexer'] = indexer_data
+                    project_data['ceer'] = indexer_data
                     self.window.set_project_data(project_data)
 
                 return
