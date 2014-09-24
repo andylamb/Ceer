@@ -224,10 +224,12 @@ class Indexer(object):
         # Header files will not be parsed, but may be included in files that
         # have been parsed, so we check the includes table.
         sql_cursor = self._connection.cursor()
-        sql_cursor.execute('SELECT COUNT(*) FROM includes WHERE include = ?',
+        sql_cursor.execute('SELECT source FROM includes WHERE include = ?',
                            (path,))
-        (count,) = sql_cursor.fetchone()
-        return count > 0
+        for (source,) in sql_cursor.fetchall():
+            if self.indexed(source):
+                return True
+        return False
 
     class IndexerStatus(object):
 
