@@ -1056,9 +1056,6 @@ class ExpandIncludesCommand(sublime_plugin.TextCommand):
         '''
         Display the includes found by the indexer.
         '''
-        if len(self.view.sel()) != 1:
-            sublime.error_message('The expand includes command requires a single selection')
-            return
 
         indexer = indexers[
             os.path.dirname(self.view.window().project_file_name())
@@ -1124,10 +1121,6 @@ class ListIncludersCommand(sublime_plugin.TextCommand):
         '''
         Display the includers found by the indexer.
         '''
-
-        if len(self.view.sel()) != 1:
-            sublime.error_message('The list includers command requires a single selection')
-            return
 
         indexer = indexers[
             os.path.dirname(self.view.window().project_file_name())
