@@ -321,7 +321,7 @@ class Indexer(object):
         sql_cursor.execute(
             'CREATE TABLE includes(source TEXT, include TEXT, depth INT)')
         sql_cursor.execute(
-            '''CREATE UNIQUE INDEX source_include_idx 
+            '''CREATE UNIQUE INDEX source_include_idx
                ON includes(source, include)''')
 
         index = cindex.Index.create()
@@ -850,22 +850,22 @@ class Indexer(object):
 
             # Parse the file.
             translation_unit = self._index.parse(path)
-        
+
             self._translation_units[path] = translation_unit
-        
+
             if progress_callback:
                 progress_callback(self.IndexerStatus.STARTING_INDEXING,
                                   path=path.decode('utf_8'),
                                   indexed=0,
                                   total=1)
-        
+
             # Update the index file.
             Indexer._update_db(
-                translation_unit.cursor, self._connection, 
+                translation_unit.cursor, self._connection,
                 self._connection.cursor(), path=path)
-        
+
             self._connection.commit()
-        
+
             if progress_callback:
                 progress_callback(self.IndexerStatus.COMPLETED,
                                   project_path=self._project_path)
@@ -919,7 +919,7 @@ class Indexer(object):
                               total=1)
 
         # Insert the updated information.
-        Indexer._update_db(translation_unit.cursor, self._connection, 
+        Indexer._update_db(translation_unit.cursor, self._connection,
                            self._connection.cursor(), path=path)
 
         self._connection.commit()
@@ -1178,6 +1178,16 @@ class Indexer(object):
 
     @staticmethod
     def _is_reference(cursor):
+        '''
+        Return True if the cursor is considered an enclosing definition.
+
+        This is used because to prevent returning multiple references that are
+        essentially the same. For example, the expression "Class::method()"
+        would otherwise return a reference for the CALL_EXPR cursor.
+
+        Parameters:
+        cursor - The cursor we are considering.
+        '''
         kinds = [
             cindex.CursorKind.OBJC_SUPER_CLASS_REF,
             cindex.CursorKind.OBJC_PROTOCOL_REF,
@@ -1192,19 +1202,17 @@ class Indexer(object):
             cindex.CursorKind.VARIABLE_REF,
             cindex.CursorKind.DECL_REF_EXPR,
             cindex.CursorKind.MEMBER_REF_EXPR,
-            
+
         ]
         return cursor.kind in kinds
 
     @staticmethod
-    def _update_db(cursor, connection, sql_cursor, enclosing_def_cursor=None, 
+    def _update_db(cursor, connection, sql_cursor, enclosing_def_cursor=None,
                    path=None):
         '''
         Update the database with a parsed translation unit.
 
         Parameters:
-        path - An absolute path to the translation unit, as bytes.
-
         cursor - The cursor that is being inserted into the database. We will
         recursively walk through all of the children, so the top level call to
         _update_db should pass in the translation unit's cursor.
@@ -1216,13 +1224,18 @@ class Indexer(object):
         enclosing_def_cursor - A cursor to the closest enclosing definition (as
         defined by _is_enclosing_def). The top level call to _update_db not
         pass in an argument.
+
+        path - A translation unit often has multiple files (i.e. included
+        headers and a source file). If path is provided, only that file will
+        be indexed. If path is None, the entire translation unit will be
+        indexed. Expects an absolute path as str.
         '''
 
-        if (not path or 
-            path == cursor.spelling or 
+        if (not path or
+            path == cursor.spelling or
             (cursor.location.file and path == cursor.location.file.name)):
 
-            # If the cursor is a definition, update the defs table, and check 
+            # If the cursor is a definition, update the defs table, and check
             # if it should be set as an enclosing definition.
             if cursor.is_definition():
                 sql_cursor.execute(
@@ -1232,8 +1245,8 @@ class Indexer(object):
                      cursor.location.offset))
             if Indexer._is_enclosing_def(cursor):
                 enclosing_def_cursor = cursor
-    
-            # To insert into refs, check that the cursor is referencing a 
+
+            # To insert into refs, check that the cursor is referencing a
             # different cursor, and is in the file we are indexing.
             #
             # TODO: does this handle headers correctly?
@@ -1241,21 +1254,21 @@ class Indexer(object):
                 cursor.referenced and
                 cursor != cursor.referenced and
                 cursor.location.file):
-    
+
                 # If an enclosing definition cursor has been set, store its
                 # location, otherwise store -1 to signal there is none.
                 if enclosing_def_cursor:
                     enclosing_offset = enclosing_def_cursor.location.offset
                 else:
                     enclosing_offset = -1
-    
+
                 sql_cursor.execute(
                     'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
                     (cursor.referenced.get_usr(),
                      cursor.location.file.name,
                      cursor.location.offset,
                      enclosing_offset))
-    
+
             # If the cursor is a base specifier, update the classes table with
             # inheritance information. Conviniently, we can use the enclosing
             # def cursor to get the subclass declaration.
@@ -1267,7 +1280,7 @@ class Indexer(object):
                      cursor.referenced.get_usr(),
                      cursor.location.file.name,
                      cursor.referenced.location.file.name))
-    
+
             # We only want to update includes once per translation unit.
             if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
                 includes = cursor.translation_unit.get_includes()
@@ -1280,7 +1293,7 @@ class Indexer(object):
 
         # Recursively index all the children.
         for child in cursor.get_children():
-            Indexer._update_db(child, connection, sql_cursor, 
+            Indexer._update_db(child, connection, sql_cursor,
                                enclosing_def_cursor, path)
 
     def _file_from_name(self, file_name):
