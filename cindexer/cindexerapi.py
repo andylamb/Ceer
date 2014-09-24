@@ -919,8 +919,12 @@ class Indexer(object):
                               total=1)
 
         # Insert the updated information.
-        Indexer._update_db(translation_unit.cursor, self._connection,
-                           self._connection.cursor(), path=path)
+        if not self.indexed(path):
+            Indexer._update_db(translation_unit.cursor, self._connection,
+                               self._connection.cursor(), path=path)
+        else:
+            Indexer._update_db(translation_unit.cursor, self._connection,
+                               self._connection.cursor())
 
         self._connection.commit()
 
