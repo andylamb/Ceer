@@ -842,20 +842,22 @@ class Indexer(object):
         if not os.path.isabs(path):
             path = os.path.join(self._project_path, path)
 
-        if progress_callback:
-            progress_callback(self.IndexerStatus.STARTING_PARSE,
-                              path=path.decode('utf-8'))
+        if Indexer._indexable(path):
 
-        # Parse the file.
-        translation_unit = self._index.parse(path)
+            if progress_callback:
+                progress_callback(self.IndexerStatus.STARTING_PARSE,
+                                  path=path.decode('utf-8'))
 
-        self._translation_units[path] = translation_unit
-
-        if progress_callback:
-            progress_callback(self.IndexerStatus.STARTING_INDEXING,
-                              path=path.decode('utf_8'),
-                              indexed=0,
-                              total=1)
+            # Parse the file.
+            translation_unit = self._index.parse(path)
+        
+            self._translation_units[path] = translation_unit
+        
+            if progress_callback:
+                progress_callback(self.IndexerStatus.STARTING_INDEXING,
+                                  path=path.decode('utf_8'),
+                                  indexed=0,
+                                  total=1)
         
             # Update the index file.
             Indexer._update_db(
@@ -867,8 +869,6 @@ class Indexer(object):
             if progress_callback:
                 progress_callback(self.IndexerStatus.COMPLETED,
                                   project_path=self._project_path)
-
-        return self._file_from_name(path)
 
     def update_file(self, cindexer_file, progress_callback=None):
         '''
@@ -928,8 +928,6 @@ class Indexer(object):
             progress_callback(self.IndexerStatus.COMPLETED,
                               project_path=self._project_path)
 
-        return self._file_from_name(path)
-
     _DB_FILE_NAME = '.cindexer.db'
     '''The name of the database file an Indexer instance creates.'''
 
@@ -955,8 +953,6 @@ class Indexer(object):
         '''
         Get the args from the compilation database and create the new
         translation unit.
-
-        This method is usually used as a target for threads.
 
         Parameters:
         translation_units - A reference to a dictionary of translation units,
@@ -1071,7 +1067,6 @@ class Indexer(object):
                 bytes(project_path, 'utf-8'))
 
         translation_units = {}
-        started_threads = []
         # If folders are provided, use them to walk the project.
         if folders and len(folders) > 0:
             # We create a list of all folder roots because we do not want to
@@ -1182,7 +1177,26 @@ class Indexer(object):
         return cursor.kind in kinds
 
     @staticmethod
-    def _update_db(path, cursor, connection,
+    def _is_reference(cursor):
+        kinds = [
+            cindex.CursorKind.OBJC_SUPER_CLASS_REF,
+            cindex.CursorKind.OBJC_PROTOCOL_REF,
+            cindex.CursorKind.OBJC_CLASS_REF,
+            cindex.CursorKind.TYPE_REF,
+            cindex.CursorKind.CXX_BASE_SPECIFIER,
+            cindex.CursorKind.TEMPLATE_REF,
+            cindex.CursorKind.NAMESPACE_REF,
+            cindex.CursorKind.MEMBER_REF,
+            cindex.CursorKind.LABEL_REF,
+            cindex.CursorKind.OVERLOADED_DECL_REF,
+            cindex.CursorKind.VARIABLE_REF,
+            cindex.CursorKind.DECL_REF_EXPR,
+            cindex.CursorKind.MEMBER_REF_EXPR,
+            
+        ]
+        return cursor.kind in kinds
+
+    @staticmethod
     def _update_db(cursor, connection, sql_cursor, enclosing_def_cursor=None, 
                    path=None):
         '''
@@ -1218,41 +1232,42 @@ class Indexer(object):
                      cursor.location.offset))
             if Indexer._is_enclosing_def(cursor):
                 enclosing_def_cursor = cursor
-
-        # To insert into refs, check that the cursor is referencing a different
-        # cursor, and is in the file we are indexing.
-        #
-        # TODO: does this handle headers correctly?
-        if (cursor.referenced and
-            cursor != cursor.referenced and
-            cursor.location.file):
-
-            # If an enclosing definition cursor has been set, store its
-            # location, otherwise store -1 to signal there is none.
-            if enclosing_def_cursor:
-                enclosing_offset = enclosing_def_cursor.location.offset
-            else:
-                enclosing_offset = -1
-
-            sql_cursor.execute(
-                'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
-                (cursor.referenced.get_usr(),
-                 cursor.location.file.name,
-                 cursor.location.offset,
-                 enclosing_offset))
-
-        # If the cursor is a base specifier, update the classes table with
-        # inheritance information. Conviniently, we can use the enclosing
-        # def cursor to get the subclass declaration.
-        if (cursor.kind == cindex.CursorKind.CXX_BASE_SPECIFIER and
-            cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
-            sql_cursor.execute(
-                'INSERT OR IGNORE INTO classes VALUES (?, ?, ?, ?)',
-                (enclosing_def_cursor.get_usr(),
-                 cursor.referenced.get_usr(),
-                 path,
-                 cursor.referenced.location.file.name))
-
+    
+            # To insert into refs, check that the cursor is referencing a 
+            # different cursor, and is in the file we are indexing.
+            #
+            # TODO: does this handle headers correctly?
+            if (Indexer._is_reference(cursor) and
+                cursor.referenced and
+                cursor != cursor.referenced and
+                cursor.location.file):
+    
+                # If an enclosing definition cursor has been set, store its
+                # location, otherwise store -1 to signal there is none.
+                if enclosing_def_cursor:
+                    enclosing_offset = enclosing_def_cursor.location.offset
+                else:
+                    enclosing_offset = -1
+    
+                sql_cursor.execute(
+                    'INSERT OR IGNORE INTO refs VALUES (?, ?, ?, ?)',
+                    (cursor.referenced.get_usr(),
+                     cursor.location.file.name,
+                     cursor.location.offset,
+                     enclosing_offset))
+    
+            # If the cursor is a base specifier, update the classes table with
+            # inheritance information. Conviniently, we can use the enclosing
+            # def cursor to get the subclass declaration.
+            if (cursor.kind == cindex.CursorKind.CXX_BASE_SPECIFIER and
+                cursor.referenced.kind != cindex.CursorKind.NO_DECL_FOUND):
+                sql_cursor.execute(
+                    'INSERT OR IGNORE INTO classes VALUES (?, ?, ?, ?)',
+                    (enclosing_def_cursor.get_usr(),
+                     cursor.referenced.get_usr(),
+                     cursor.location.file.name,
+                     cursor.referenced.location.file.name))
+    
             # We only want to update includes once per translation unit.
             if cursor.kind == cindex.CursorKind.TRANSLATION_UNIT:
                 includes = cursor.translation_unit.get_includes()

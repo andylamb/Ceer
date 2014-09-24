@@ -424,11 +424,11 @@ class SublimeIndexerListener(sublime_plugin.EventListener):
                     cindexer_file = cindexer.File.from_name(indexer,
                                                             view.file_name())
                     StatusUpdater.start_update()
-                    cindexer_file = indexer.update_file(cindexer_file,
+                    indexer.update_file(cindexer_file,
                                                         _progress_callback)
                 else:
                     StatusUpdater.start_update()
-                    cindexer_file = indexer.add_file(name, _progress_callback)
+                    indexer.add_file(name, _progress_callback)
 
                 _update_view_diagnostics(view, indexer)
 
