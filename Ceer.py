@@ -143,6 +143,7 @@ class StatusUpdater(object):
         '''
         cls._updating = False
         cls._updating_thread.join()
+        cls._status_message = ''
         if status_message:
             sublime.status_message(status_message)
 
