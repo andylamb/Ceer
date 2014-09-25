@@ -591,7 +591,8 @@ class Indexer(object):
                     ]
                     super_cursor = cindex.Cursor.from_location(
                         super_translation_unit, super_source_location)
-                    superclasses.append(super_cursor)
+                    if super_cursor not in superclasses:
+                        superclasses.append(super_cursor)
 
             # Iterate for the classes we just found.
             sub_usrs = super_usrs
@@ -663,7 +664,8 @@ class Indexer(object):
                     ]
                     sub_cursor = cindex.Cursor.from_location(
                         sub_translation_unit, sub_source_location)
-                    subclasses.append(sub_cursor)
+                    if sub_cursor not in subclasses:
+                        subclasses.append(sub_cursor)
 
             # Iterate for the classes we just found.
             super_usrs = sub_usrs
