@@ -791,7 +791,10 @@ class Indexer(object):
             translation_unit = self._translation_units[
                 cindexer_file._translation_unit_name
             ]
-            return translation_unit.diagnostics
+            return [
+                diagnostic for diagnostic in translation_unit.diagnostics 
+                if diagnostic.location.file.name == cindexer_file.name
+            ]
         else:
             result = []
             for translation_unit in self._translation_units.values():
