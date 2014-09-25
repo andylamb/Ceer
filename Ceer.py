@@ -897,13 +897,14 @@ class ExpandSuperclassesCommand(sublime_plugin.TextCommand):
         superclasses.reverse()
 
         superclass_strings = []
-        for cursor in superclasses:
+        for cursor, depth in superclasses:
             superclass_string = ':'.join([
                os.path.basename(cursor.location.file.name.decode('utf-8')),
                str(cursor.location.line),
                str(cursor.location.column),
                cursor.displayname.decode('utf-8')
                ])
+            superclass_string = (' ' * (depth - 1)) + superclass_string
             superclass_strings.append(superclass_string)
 
         # We capture the window and current selection so they can be used by
@@ -926,7 +927,7 @@ class ExpandSuperclassesCommand(sublime_plugin.TextCommand):
             '''
             Select the highlighted class.
             '''
-            super_cursor = superclasses[index]
+            super_cursor, unused = superclasses[index]
             super_location_string = ':'.join([
                 super_cursor.location.file.name.decode('utf-8'),
                 str(super_cursor.location.line),
@@ -989,13 +990,14 @@ class ExpandSubclassesCommand(sublime_plugin.TextCommand):
             return
 
         subclass_strings = []
-        for cursor in subclasses:
+        for cursor, depth in subclasses:
             subclass_string = ':'.join([
                os.path.basename(cursor.location.file.name.decode('utf-8')),
                str(cursor.location.line),
                str(cursor.location.column),
                cursor.displayname.decode('utf-8')
                ])
+            subclass_string = (' ' * (depth - 1)) + subclass_string
             subclass_strings.append(subclass_string)
 
         # We capture the window and current selection so they can be used by
@@ -1018,7 +1020,7 @@ class ExpandSubclassesCommand(sublime_plugin.TextCommand):
             '''
             Select the highlighted class.
             '''
-            sub_cursor = subclasses[index]
+            sub_cursor, unused = subclasses[index]
             sub_location_string = ':'.join([
                 sub_cursor.location.file.name.decode('utf-8'),
                 str(sub_cursor.location.line),

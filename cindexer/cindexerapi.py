@@ -529,11 +529,12 @@ class Indexer(object):
     def get_superclasses(self, source_location):
 
         '''
-        Return an array of cursors to superclasses.
+        Return a list tuples of cursors to superclasses and their depths.
 
         The cursors are ordered ascending up the inheritance hierarchy, (i.e.
         all immediate superclasses are returned first, than all the
-        superclasses of the immediate superclasses, etc.)
+        superclasses of the immediate superclasses, etc.) Depth is 1 for the
+        immediate superclasses.
 
         Parameters:
         source_location -- A SourceLocation instance, created by a call
@@ -561,6 +562,7 @@ class Indexer(object):
         # We do a BFS for all the superclasses, and return them in this order.
         sql_cursor = self._connection.cursor()
         sub_usrs = [cursor.get_usr()]
+        depth = 1
         while len(sub_usrs) > 0:
 
             # First, lookup all of the superclasses for the current subclasses.
@@ -591,22 +593,25 @@ class Indexer(object):
                     ]
                     super_cursor = cindex.Cursor.from_location(
                         super_translation_unit, super_source_location)
-                    if super_cursor not in superclasses:
-                        superclasses.append(super_cursor)
+                    if not any(super_cursor == cursor
+                               for cursor, depth in superclasses):
+                        superclasses.append((super_cursor, depth))
 
             # Iterate for the classes we just found.
             sub_usrs = super_usrs
+            depth = depth + 1
 
         return superclasses
 
     def get_subclasses(self, source_location):
 
         '''
-        Return an array of cursors to subclasses.
+        Return a list of tuples of cursors to subclasses and their depth.
 
         The cursors are ordered descending down the inheritance hierarchy,
         (i.e. all immediate subclasses are returned first, than all the
-        subclasses of the immediate subclasses, etc.)
+        subclasses of the immediate subclasses, etc.). Depth is 1 for the
+        immediate subclasses.
 
         Parameters:
         source_location -- A SourceLocation instance, created by a call
@@ -634,6 +639,7 @@ class Indexer(object):
         # We do a BFS for all the subclasses, and return them in this order.
         sql_cursor = self._connection.cursor()
         super_usrs = [cursor.get_usr()]
+        depth = 1
         while len(super_usrs) > 0:
 
             # First, lookup all of the subclasses for the current superclasses.
@@ -664,11 +670,13 @@ class Indexer(object):
                     ]
                     sub_cursor = cindex.Cursor.from_location(
                         sub_translation_unit, sub_source_location)
-                    if sub_cursor not in subclasses:
-                        subclasses.append(sub_cursor)
+                    if not any(sub_cursor == cursor
+                               for cursor, depth in subclasses):
+                        subclasses.append((sub_cursor, depth))
 
             # Iterate for the classes we just found.
             super_usrs = sub_usrs
+            depth = depth + 1
 
         return subclasses
 
