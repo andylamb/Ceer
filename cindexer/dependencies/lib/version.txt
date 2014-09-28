@@ -1,0 +1,4 @@
+Clang:
+  Repo: https://github.com/andylamb/clang.git
+  Branch: andylamb/SublimeIndexer
+  Commit: 1af273bedc2affe1d9eccae5c2f5e9fd66718c48
