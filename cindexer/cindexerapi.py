@@ -10,13 +10,15 @@ Indexer -- The main class of the module, most operations will run through an
 instance of this class
 '''
 from fnmatch import fnmatch
+import platform
 import os
 import subprocess
 import sys
 import threading
 
 _DEPENDENCIES_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)),
-                                  'dependencies')
+                                  os.path.join('dependencies',
+                                               platform.system()))
 _MODULES_PATH = os.path.join(_DEPENDENCIES_PATH, 'modules')
 _LIB_DYNLOAD_PATH = os.path.join(_MODULES_PATH, 'lib-dynload')
 
