@@ -191,5 +191,5 @@ Diagnostics can be controlled using `diagnostics_enabled` in the `ceer` section 
 
 ### Contribute
 
-Ceer is currently in a prototype phase, and we are working hard to improve stability, scalability, and portability. [Issues](https://github.com/andylamb/Ceer/issues) and [Pull Requests](https://github.com/andylamb/Ceer/pulls?q=is%3Aopen+is%3Apr) are greatly appreciated!
+Ceer is currently in a prototype phase, and we are working hard to improve stability, scalability, and portability. [Issues](https://github.com/andylamb/Ceer/issues) and [Pull Requests](https://github.com/andylamb/Ceer/pulls?q=is%3Aopen+is%3Apr) are greatly appreciated! Please read over the [Contribution Guidelines](https://github.com/andylamb/Ceer/wiki/Contribution-Guidelines) to get started.
 
