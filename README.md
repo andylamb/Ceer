@@ -12,6 +12,14 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
   * [Expand Includes](#expand-includes)
   * [List Includers](#list-includers)
   * [Diagnostics](#diagnostics)
+2. [Setup](#setup)
+  1. [Installation](#installation)
+    * [Package Control](#package-control)
+    * [Cloning](#cloning)
+  2. [Quickstart](#quickstart)
+  3. [Configure](#configure)
+    * [Compilation Commands](#compilation-commands)
+    * [Diagnostics](#diagnostics)
 
 ### Features
 
@@ -134,3 +142,49 @@ Calling the View Issues in Project command or calling the View Issues in File co
 Selecting an error in the menu will jump to the error.
 
 <img src="https://github.com/andylamb/Ceer/blob/master/img/diagnostics4.png">
+
+### Setup
+
+**Currently Ceer is in a pre-release prototype phase, and is only available for OSX. Support for other platforms is planned.**
+
+#### Installation
+
+##### Package Control
+
+Ceer will soon be available in [Package Control](https://sublime.wbond.net).
+
+##### Cloning
+
+Currently, the only way to install is by directly cloning the Ceer repo into `~/Library/Application Support/Sublime Text 3/Packages`:
+
+```shell
+$ cd ~/Library/Application Support/Sublime Text 3/Packages
+$ git clone git@github.com:andylamb/Ceer.git
+```
+
+or 
+
+```shell
+$ cd ~/Library/Application Support/Sublime Text 3/Packages
+$ git clone https://github.com/andylamb/Ceer.git
+```
+
+#### Quickstart
+
+1. Create a `.sublime-project` file, using 'Project > Save Project As...'
+2. Right click anywhere in the Side Bar and select Build Index.
+
+<img src="https://github.com/andylamb/Ceer/raw/master/img/build_index.png">
+
+#### Configure
+
+**Ceer requires a `.sublime-project` file in order to know which files to parse and index. To create a `.sublime-project` file, go to 'Project > Save Project As...'**
+
+##### Compilation Commands
+
+In order to produce the most faithful representation of the source code, Ceer can parse a `CMakeLists.txt` or `Makefile` and use the same compilation commands. To enable this feature, in the `.sublime-project` file , under the `ceer` section, set either `cmakelists_path` or `makefile_path`. *Note that the 'ceer' section is created automatically on the first call to Build Index*
+
+##### Diagnostics
+
+Diagnostics can be controlled using `diagnostics_enabled` in the `ceer` section of the `.sublime-project` file.
+
