@@ -340,8 +340,7 @@ def _update_view_diagnostics(view, indexer):
         view.erase_regions('diagnostics')
         view.add_regions(
             'diagnostics', all_regions, 'invalid',
-            flags=(sublime.PERSISTENT |
-                   sublime.DRAW_SQUIGGLY_UNDERLINE |
+            flags=(sublime.DRAW_SQUIGGLY_UNDERLINE |
                    sublime.DRAW_NO_FILL |
                    sublime.DRAW_NO_OUTLINE))
 
