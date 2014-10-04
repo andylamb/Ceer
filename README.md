@@ -20,6 +20,7 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
   3. [Configure](#configure)
     * [Compilation Commands](#compilation-commands)
     * [Diagnostics](#diagnostics)
+3. [Contribute](#contribute)
 
 ### Features
 
@@ -145,7 +146,7 @@ Selecting an error in the menu will jump to the error.
 
 ### Setup
 
-**Currently Ceer is in a pre-release prototype phase, and is only available for OSX. Support for other platforms is planned.**
+**Currently Ceer is in a prototype phase, and is only available for OSX. Support for other platforms is planned.**
 
 #### Installation
 
@@ -187,4 +188,8 @@ In order to produce the most faithful representation of the source code, Ceer ca
 ##### Diagnostics
 
 Diagnostics can be controlled using `diagnostics_enabled` in the `ceer` section of the `.sublime-project` file.
+
+### Contribute
+
+Ceer is currently in a prototype phase, and we are working hard to improve stability, scalability, and portability. [Issues](https://github.com/andylamb/Ceer/issues) and [Pull Requests](https://github.com/andylamb/Ceer/pulls?q=is%3Aopen+is%3Apr) are greatly appreciated!
 
