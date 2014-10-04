@@ -11,6 +11,7 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
   * [Expand Subclasses](#expand-subclasses)
   * [Expand Includes](#expand-includes)
   * [List Includers](#list-includers)
+  * [Diagnostics](#diagnostics)
 
 ### Features
 
@@ -113,3 +114,23 @@ Call List Includers on `Foo.h`.
 `Baz.h`, `Foo.cpp`, and `main.cpp` all directly include `Foo.h`. `Baz.cpp` indirectly includes `Foo.h`, because it includes `Baz.h`.
 
 <img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/list_includers2.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2xpc3RfaW5jbHVkZXJzMi5wbmciLCJleHBpcmVzIjoxNDEzMDUwMjAxfQ%3D%3D--5544c74950f31a41f7a09d621a971f1207119923">
+
+#### Diagnostics
+
+If the `enable_diagnostics` option is set to `true` in the `.sublime-project` file, Ceer will display the same errors and warnings as the compiler. Moving the cursor to anywhere in the diagnostic will display a summary in the Sublime status bar at the bottom of the window. A list of all commands in the project or a single file can be viewed in a menu using the View Issues in Project or View Issues in File commands, respectively.
+
+#### Example
+
+`a_private_field` is declared to be `private` in `Foo.h`. Attempting to access it in `Baz` results in the error `'a_private_field' is a private member of 'Foo'`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/diagnostics1.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2RpYWdub3N0aWNzMS5wbmciLCJleHBpcmVzIjoxNDEzMDUzNzM4fQ%3D%3D--e46f0688d1caa46aa627e2d0967c6575fd3be27e">
+
+Calling the View Issues in Project command or calling the View Issues in File command on `Baz.h` displays the error in a menu.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/diagnostics3.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2RpYWdub3N0aWNzMy5wbmciLCJleHBpcmVzIjoxNDEzMDUzNzc3fQ%3D%3D--7b0ed3ef55942da68bf7bb99d21b96aaa629f7ad">
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/diagnostics2.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2RpYWdub3N0aWNzMi5wbmciLCJleHBpcmVzIjoxNDEzMDUzNzY3fQ%3D%3D--3045f5813d144f6b0bf1fd3587e883633fd3805b">
+
+Selecting an error in the menu will jump to the error.
+
+<img src="https://github.com/andylamb/Ceer/blob/master/img/diagnostics4.png">
