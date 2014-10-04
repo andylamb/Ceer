@@ -434,12 +434,12 @@ class CeerListener(sublime_plugin.EventListener):
                     cindexer_file = cindexer.File.from_name(indexer,
                                                             view.file_name())
                     StatusUpdater.start_update()
-                    indexer.update_file(cindexer_file,
-                                                        _progress_callback)
+                    indexer.update_file(cindexer_file, _progress_callback)
                 else:
                     StatusUpdater.start_update()
                     indexer.add_file(name, _progress_callback)
 
+                StatusUpdater.end_update()
                 _update_view_diagnostics(view, indexer)
 
     def on_load(self, view):
