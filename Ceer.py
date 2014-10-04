@@ -307,47 +307,57 @@ def _update_view_diagnostics(view, indexer):
     part of.
     '''
 
-    if indexer.indexed(view.file_name()):
-        cindexer_file = cindexer.File.from_name(indexer, view.file_name())
-        diagnostics = indexer.get_diagnostics(cindexer_file)
+    ceer_data = view.window().project_data().get('ceer')
+    if ceer_data and ceer_data.get('diagnostics_enabled'):
+        if indexer.indexed(view.file_name()):
+            cindexer_file = cindexer.File.from_name(indexer, view.file_name())
+            diagnostics = indexer.get_diagnostics(cindexer_file)
 
-        # view_diagnostics is a list of tuples of regions and diagnostics, used
-        # to lookup a diagnostic when one of its regions is highlighted.
-        # all_regions is just a list of regions, used to update the view.
-        view_diagnostics = []
-        all_regions = []
+            # view_diagnostics is a list of tuples of regions and diagnostics, 
+            # used to lookup a diagnostic when one of its regions is 
+            # highlighted. all_regions is just a list of regions, used to 
+            # update the view.
+            view_diagnostics = []
+            all_regions = []
 
-        for diagnostic in diagnostics:
-            regions = []
-            # Each diagnostic can have multiple ranges, and/or one location.
-            for diagnostic_range in diagnostic.ranges:
-                regions.append(sublime.Region(diagnostic_range.start.offset,
-                                              diagnostic_range.end.offset))
+            for diagnostic in diagnostics:
+                regions = []
+                # Each diagnostic can have multiple ranges, and/or one 
+                # location.
+                for diagnostic_range in diagnostic.ranges:
+                    regions.append(
+                        sublime.Region(diagnostic_range.start.offset,
+                                       diagnostic_range.end.offset))
 
-            # If the location is at the very end of the view, highlight the
-            # last character. Otherwise, highlight the character following the
-            # offset.
-            if diagnostic.location.offset == view.size():
-                regions.append(sublime.Region(diagnostic.location.offset - 1,
-                                              diagnostic.location.offset))
-            else:
-                regions.append(sublime.Region(diagnostic.location.offset,
-                                              diagnostic.location.offset + 1))
+                # If the location is at the very end of the view, highlight the
+                # last character. Otherwise, highlight the character following 
+                # the offset.
+                if diagnostic.location.offset == view.size():
+                    regions.append(
+                        sublime.Region(diagnostic.location.offset - 1,
+                                       diagnostic.location.offset))
+                else:
+                    regions.append(
+                        sublime.Region(diagnostic.location.offset,
+                                       diagnostic.location.offset + 1))
 
-            all_regions.extend(regions)
-            view_diagnostics.append((regions, diagnostic))
+                all_regions.extend(regions)
+                view_diagnostics.append((regions, diagnostic))
 
+            view.erase_regions('diagnostics')
+            view.add_regions(
+                'diagnostics', all_regions, 'invalid',
+                flags=(sublime.DRAW_SQUIGGLY_UNDERLINE |
+                       sublime.DRAW_NO_FILL |
+                       sublime.DRAW_NO_OUTLINE))
+
+            # Store the list of tuples of regions and diagnostics in the global
+            # current_diagnostics dictionary so we can look it up when a
+            # diagnostic's region is highlighted
+            current_diagnostics[view.file_name()] = view_diagnostics
+    else:
         view.erase_regions('diagnostics')
-        view.add_regions(
-            'diagnostics', all_regions, 'invalid',
-            flags=(sublime.DRAW_SQUIGGLY_UNDERLINE |
-                   sublime.DRAW_NO_FILL |
-                   sublime.DRAW_NO_OUTLINE))
-
-        # Store the list of tuples of regions and diagnostics in the global
-        # current_diagnostics dictionary so we can look it up when a
-        # diagnostic's region is highlighted
-        current_diagnostics[view.file_name()] = view_diagnostics
+        current_diagnostics.clear()
 
 def _get_diagnostic_summary(diagnostic):
 
@@ -514,14 +524,16 @@ class SideBarBuildIndexCommand(sublime_plugin.WindowCommand):
 
         # If the user hasn't set a CMakeLists.txt or Makefile, ask them if they
         # want to, and setup the .sublime-project to do so. These can be used
-        # to build a compilation database.
+        # to build a compilation database. Also setup the diagnostics_enabled
+        # option, if not yet done.
         if not indexer_data or not (makefile_path or cmakelists_path):
+            if not indexer_data:
+                indexer_data = {"cmakelists_path": "",
+                                "makefile_path": "",
+                                "diagnostics_enabled": True}
+                project_data['ceer'] = indexer_data
+                self.window.set_project_data(project_data)
             if sublime.ok_cancel_dialog('Ceer can use either a CMakeLists.txt or Makefile to generate a more accurate index by using the exact commands used to compile to project. To enable this feature, in the .sublime-project file, under the \"ceer\" section, set either \"cmakelists_path\" or \"makefile_path\". If you would like to stop building the index, to edit the .sublime-project file, click \"OK\". To continue building the index, click \"Cancel\"'):
-                if not indexer_data:
-                    indexer_data = {"cmakelists_path": "", "makefile_path": ""}
-                    project_data['ceer'] = indexer_data
-                    self.window.set_project_data(project_data)
-
                 return
 
 
