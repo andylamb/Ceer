@@ -5,7 +5,7 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
 
 ## Table of Contents
 1. [Features](#features)
-  * [Open Definition](#open_definition)
+  * [Open Definition](#open-definition)
 
 ### Features
 
