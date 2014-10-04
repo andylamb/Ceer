@@ -9,6 +9,8 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
   * [List References](#list-references)
   * [Expand Superclasses](#expand-superclasses)
   * [Expand Subclasses](#expand-subclasses)
+  * [Expand Includes](#expand-includes)
+  * [List Includers](#list-includers)
 
 ### Features
 
@@ -83,3 +85,31 @@ Call Expand Subclasses on `Base`.
 This diagram looks similar to when we called Expand Superclasses on `Baz`, but is reversed, because we are looking from the top of the inheritance hierarchy down, instead of from the bottom up.
 
 <img src="https://github.com/andylamb/Ceer/blob/master/img/expand_subclasses2.png">
+
+#### Expand Includes
+
+Right clicking anywhere in a file and selecting the Expand Includes command will show all the files that file is including, whether directly or indirectly. The includes are ordered by depth first search, and indented based on how indirect the inclusion is.
+
+##### Example
+
+Call Expand Include on `Baz.h`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_includes1.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9pbmNsdWRlczEucG5nIiwiZXhwaXJlcyI6MTQxMzA0OTMxOH0%3D--6e0553d6b1a2b4f570f6c00abcfc5d1c3f15ca17">
+
+`Baz.h` includes `Foo.h` and `Bar.h`, which both include `Base.h`. Note that `Base.h` is indented because it is not directly included in `Baz.h`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_includes2.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9pbmNsdWRlczIucG5nIiwiZXhwaXJlcyI6MTQxMzA0OTM0OH0%3D--fbdbf2a4f64220ef62905dd83324f923ef1e80e7">
+
+#### List Includers
+
+The List Includers displays a menu of all the files that are including the file the command is called on. Similarly to the Expand Includes command, the files are ordered by depth first search, and indented based on indirectness.
+
+#### Example
+
+Call List Includers on `Foo.h`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/list_includers1.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2xpc3RfaW5jbHVkZXJzMS5wbmciLCJleHBpcmVzIjoxNDEzMDUwMTc4fQ%3D%3D--127a108dcea624649591620dc98182635d07c707">
+
+`Baz.h`, `Foo.cpp`, and `main.cpp` all directly include `Foo.h`. `Baz.cpp` indirectly includes `Foo.h`, because it includes `Baz.h`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/list_includers2.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2xpc3RfaW5jbHVkZXJzMi5wbmciLCJleHBpcmVzIjoxNDEzMDUwMjAxfQ%3D%3D--5544c74950f31a41f7a09d621a971f1207119923">
