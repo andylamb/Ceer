@@ -7,6 +7,8 @@ Ceer is a C and C++ plugin for Sublime Text that provides code intelligence acro
 1. [Features](#features)
   * [Open Definition](#open-definition)
   * [List References](#list-references)
+  * [Expand Superclasses](#expand-superclasses)
+  * [Expand Subclasses](#expand-subclasses)
 
 ### Features
 
@@ -45,3 +47,39 @@ The first reference found is in `main.cpp`. Here we can see that Ceer is able to
 The second reference found is in `Baz`'s method `another_baz_method`.
 
 <img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/list_references3.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2xpc3RfcmVmZXJlbmNlczMucG5nIiwiZXhwaXJlcyI6MTQxMzAwNzA1Nn0%3D--82676b5d52d7970b3ac99eaf3cc93def6cacc637">
+
+#### Expand Superclasses
+
+The Expand Superclasses command can be called on any definition or reference for a C++ class, and displays inheritance hierarchy of the class in a menu. 
+
+##### Example 
+
+Call Expand Superclasses on `Foo`. As with List References, we could also call Expand Superclasses on a reference to `Foo`.
+
+<img src="https://github.com/andylamb/Ceer/raw/master/img/expand_superclasses1.png">
+
+`Foo` inherits from `Base`, which doesn't inherit from any other class.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_superclasses2.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9zdXBlcmNsYXNzZXMyLnBuZyIsImV4cGlyZXMiOjE0MTMwNDU2MjZ9--b9fd78ed07963ba3c587d4e853f321e45c78c04f">
+
+`Baz` has a more interesting inheritance structure.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_superclasses3.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9zdXBlcmNsYXNzZXMzLnBuZyIsImV4cGlyZXMiOjE0MTMwNDU2NDB9--47ddb9d7e2da4864ddb9f1e5fc6e6626663fa0e1">
+
+`Baz` inherits directly from both `Foo` and `Bar`, both of which inherit from `Base`. Note that in the menu, the superclasses are displayed in breath first search order, and are indented by their level in the inheritance hierarchy.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_superclasses4.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9zdXBlcmNsYXNzZXM0LnBuZyIsImV4cGlyZXMiOjE0MTMwNDU2NTR9--087d1c34a372628f6335955859403480f56d41f7">
+
+#### Expand Subclasses
+
+Naturally, the Expand Subclasses command behaves the same as the Expand Superclasses command, but displays classes that inherit from the selected class.
+
+##### Example
+
+Call Expand Subclasses on `Base`.
+
+<img src="https://raw.githubusercontent.com/andylamb/Ceer/master/img/expand_subclasses1.png?token=4143035__eyJzY29wZSI6IlJhd0Jsb2I6YW5keWxhbWIvQ2Vlci9tYXN0ZXIvaW1nL2V4cGFuZF9zdWJjbGFzc2VzMS5wbmciLCJleHBpcmVzIjoxNDEzMDQ2MzQ1fQ%3D%3D--e025200ea1db926fdf21a6e729d8d4f16d1894af">
+
+This diagram looks similar to when we called Expand Superclasses on `Baz`, but is reversed, because we are looking from the top of the inheritance hierarchy down, instead of from the bottom up.
+
+<img src="https://github.com/andylamb/Ceer/blob/master/img/expand_subclasses2.png">
