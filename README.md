@@ -30,7 +30,7 @@ Open Definition will open `Foo.cpp` and highlight the `some_method` definition.
 
 #### List References
 
-The List References command can be called on any definition or reference, and will present list all references in menu. Highlighting a reference will navigate to its location in the project. 
+The List References command can be called on any definition or reference, and will list all references in a menu. Highlighting a reference will navigate to its location in the project. 
 
 ##### Example
 
