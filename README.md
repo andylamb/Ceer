@@ -154,7 +154,7 @@ Selecting an error in the menu will jump to the error.
 
 ##### Package Control
 
-Ceer will soon be available in [Package Control](https://sublime.wbond.net).
+Ceer is available in [Package Control](https://sublime.wbond.net).
 
 ##### Cloning
 
