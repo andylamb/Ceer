@@ -3,7 +3,7 @@
 >
 Ceer is a C and C++ plugin for Sublime Text that provides code intelligence across source files by continuously parsing and indexing a project. Because Ceer is actually starting to compiling the code, but stopping before code generation, it reflects the true state and structure of the program.
 
-**Ceer is in an early prototype phase, and we are working hard to improve stability, scalability, and portability. Currently, Ceer is only available on OSX, support for other major platforms is in the works.**
+**Ceer is in an early prototype phase, and we are working hard to improve stability, scalability, and portability. Currently, Ceer is only available on OSX, support for other major platforms is in the works. I haven't developed a good framework for testing yet, so any feedback is greatly appreciated!**
 
 ## Table of Contents
 1. [Features](#features)
